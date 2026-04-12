@@ -1,0 +1,206 @@
+/* McKinsey Governance - Executive African Branding */
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;700;900&display=swap');
+
+:root {
+    --brand-ochre: #C8922A;      /* African Gold / Highveld Dusk */
+    --brand-terracotta: #A8401E; /* Risk / SA Clay */
+    --brand-forest: #2A6645;     /* Completion / Lowveld Rain */
+    --header-authority: #0D1F33; /* McKinsey Dark Header */
+    --bg-main: #FDFBF7;
+    --text-charcoal: #1C1917;
+}
+
+/* Global Reset */
+.stApp {
+    background-color: var(--bg-main);
+    color: var(--text-charcoal);
+    font-family: 'Outfit', -apple-system, sans-serif !important;
+}
+
+.block-container {
+    padding-top: 0rem !important;
+    padding-bottom: 0rem !important;
+    padding-left: 1.5rem !important;
+    padding-right: 1.5rem !important;
+    max-height: 100vh;
+}
+
+/* Tribal Pattern Borders */
+.tribal-line {
+    height: 12px;
+    width: 100%;
+    background: 
+        linear-gradient(45deg, var(--brand-ochre) 25%, transparent 25%),
+        linear-gradient(-45deg, var(--brand-ochre) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, var(--brand-terracotta) 75%),
+        linear-gradient(-45deg, transparent 75%, var(--brand-terracotta) 75%),
+        #111;
+    background-size: 16px 16px;
+}
+
+/* McKinsey Authority Header */
+.mckinsey-header {
+    background-color: var(--header-authority);
+    padding: 1rem 2rem;
+    color: #FFFFFF;
+    position: relative;
+    border-top: 12px solid transparent; /* Placeholder for top tribal */
+    border-bottom: 12px solid transparent; /* Placeholder for bottom tribal */
+}
+
+.header-title {
+    font-size: 2.2rem;
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    display: inline-block;
+}
+
+.header-subtitle {
+    color: #94A3B8;
+    font-weight: 300;
+    font-size: 1rem;
+    padding-left: 10px;
+    border-left: 1px solid #334155;
+    margin-left: 10px;
+}
+
+.uj-attribution {
+    font-size: 0.8rem;
+    color: #CBD5E1;
+    margin-top: -5px;
+}
+
+/* ROR Metric Cards */
+.ror-metric-container {
+    display: flex;
+    justify-content: space-between;
+    padding: 1rem 0;
+    border-bottom: 1px solid #E2E8F0;
+}
+
+.ror-card {
+    width: 23%;
+}
+
+.ror-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #64748B;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.ror-value {
+    font-size: 1.8rem;
+    font-weight: 900;
+    color: var(--text-charcoal);
+}
+
+.ror-progress-bar {
+    height: 3px;
+    width: 100%;
+    background: #E2E8F0;
+    margin: 5px 0;
+    position: relative;
+}
+
+.ror-progress-fill {
+    position: absolute;
+    height: 100%;
+    background: var(--brand-ochre);
+}
+
+.ror-target {
+    font-size: 0.7rem;
+    color: #94A3B8;
+    font-weight: 500;
+}
+
+/* Strategic Conversation & Agent Pipeline */
+.tab-container {
+    margin-top: 1rem;
+}
+
+.verdict-box {
+    background-color: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-left: 5px solid var(--brand-terracotta);
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+/* Governance Trace Pipeline */
+.pipeline-card {
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 4px;
+    padding: 10px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+}
+
+.trace-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 12px;
+}
+
+.dot-green { background-color: var(--brand-forest); }
+.dot-terracotta { background-color: var(--brand-terracotta); }
+.dot-grey { background-color: #CBD5E1; }
+
+.trace-label {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--header-authority);
+}
+
+.trace-status {
+    font-size: 0.75rem;
+    color: #64748B;
+}
+
+/* Command Interface */
+.governance-caption {
+    font-size: 0.7rem;
+    color: var(--brand-terracotta);
+    font-weight: 800;
+    text-transform: uppercase;
+    margin-top: 10px;
+}
+
+.analyst-button {
+    background: transparent;
+    border: 1px solid #CBD5E1;
+    color: var(--header-authority);
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    margin-right: 5px;
+    cursor: pointer;
+}
+
+/* Sidebar Custom Signals */
+.signal-item {
+    font-size: 0.85rem;
+    margin-bottom: 8px;
+}
+
+/* Profile Circle */
+.header-profile {
+    width: 40px;
+    height: 40px;
+    background: transparent;
+    border: 1px solid var(--brand-ochre);
+    border-radius: 50%;
+    color: var(--brand-ochre);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-size: 0.9rem;
+    margin-right: 15px;
+}

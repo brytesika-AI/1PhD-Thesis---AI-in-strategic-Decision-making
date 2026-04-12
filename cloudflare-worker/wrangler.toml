@@ -1,0 +1,25 @@
+name = "ai-srf-worker"
+main = "index.js"
+compatibility_date = "2024-01-01"
+
+[ai]
+binding = "AI"
+
+[vars]
+AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "aisrf-phd-index"
+
+[[kv_namespaces]]
+binding = "PHD_CHUNKS"
+id = "5aa1df4235b64bc2b0fabb9c512ad05d"
+
+[[kv_namespaces]]
+binding = "LEARNING_MEMORY"
+id = "062215de146a401e8171047434a582a9"
+
+[[kv_namespaces]]
+binding = "RATINGS"
+id = "580131c46e3d4d38ae20c80c1eb6d37a"

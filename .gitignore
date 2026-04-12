@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*$python.exe
+.env
+.venv/
+env/
+venv/
+chroma_db/
+runs/
+*.log
+.streamlit/
+! .streamlit/config.toml

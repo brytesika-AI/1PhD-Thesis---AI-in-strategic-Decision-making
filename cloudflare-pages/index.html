@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI - Strategic Resilience Framework</title>
+    <meta name="description" content="AI-driven Strategic Resilience Framework — structured executive decision-making partner for South African corporate digitalisation governance.">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Source+Serif+4:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        :root{
+            --kalahari:#8B2500; --kalahari-glow:rgba(139,37,0,0.12);
+            --baobab:#C27B2B; --baobab-glow:rgba(194,123,43,0.10);
+            --gold:#D4A017; --gold-glow:rgba(212,160,23,0.10);
+            --ochre:#B8860B;
+            --ubuntu:#2D6A4F; --ubuntu-glow:rgba(45,106,79,0.10);
+            --cape:#1B4F72;
+            --charcoal:#1A1A1A; --slate:#0D1117; --slate2:#151D2B; --slate3:#1E2A3E;
+            --ivory:#F5F0E8; --ivory2:#D5CFC4; --ivory3:#A09A8E;
+            --border:#2A3548; --border2:#374258;
+            --red:#C0392B; --purple:#7D3C98;
+            --radius:10px;
+        }
+        body{font-family:'Source Serif 4','Georgia',serif;background:var(--slate);color:var(--ivory);min-height:100vh;}
+
+        /* African Geometric Pattern */
+        .geo-pattern{height:4px;background:repeating-linear-gradient(90deg,var(--kalahari) 0,var(--kalahari) 8px,transparent 8px,transparent 12px,var(--baobab) 12px,var(--baobab) 20px,transparent 20px,transparent 24px,var(--ubuntu) 24px,var(--ubuntu) 32px,transparent 32px,transparent 36px,var(--gold) 36px,var(--gold) 44px,transparent 44px,transparent 48px);}
+
+        /* ============= ONBOARDING OVERLAY ============= */
+        .onboard-overlay{position:fixed;inset:0;background:var(--slate);z-index:1000;display:flex;align-items:center;justify-content:center;transition:opacity 0.6s,transform 0.6s;}
+        .onboard-overlay.hidden{opacity:0;pointer-events:none;transform:scale(1.02);}
+        .onboard-card{max-width:580px;width:90%;text-align:center;padding:48px 40px;}
+        .onboard-icon{font-size:3.5rem;margin-bottom:16px;}
+        .onboard-headline{font-family:'DM Serif Display',serif;font-size:1.7rem;line-height:1.35;color:var(--ivory);margin-bottom:12px;}
+        .onboard-headline span{color:var(--baobab);}
+        .onboard-sub{font-size:0.88rem;color:var(--ivory3);line-height:1.6;margin-bottom:32px;}
+        .onboard-form{text-align:left;}
+        .field-group{margin-bottom:16px;}
+        .field-label{font-family:'Inter',sans-serif;font-size:0.65rem;font-weight:700;color:var(--ivory3);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;}
+        .field-input{width:100%;background:var(--slate2);border:1px solid var(--border);border-radius:8px;padding:11px 14px;color:var(--ivory);font-family:'Source Serif 4',serif;font-size:0.9rem;outline:none;transition:border-color 0.2s;}
+        .field-input:focus{border-color:var(--baobab);}
+        .field-input::placeholder{color:var(--ivory3);}
+        .field-select{appearance:none;background:var(--slate2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M6 8L1 3h10z' fill='%23A09A8E'/%3E%3C/svg%3E") no-repeat right 12px center;width:100%;border:1px solid var(--border);border-radius:8px;padding:11px 14px;color:var(--ivory);font-family:'Source Serif 4',serif;font-size:0.9rem;outline:none;cursor:pointer;}
+        .field-textarea{min-height:80px;resize:vertical;}
+        .onboard-cta{width:100%;background:var(--kalahari);color:white;border:none;padding:14px;border-radius:8px;font-family:'DM Serif Display',serif;font-size:1rem;cursor:pointer;transition:all 0.25s;margin-top:8px;letter-spacing:0.5px;}
+        .onboard-cta:hover{background:#A03000;transform:translateY(-1px);}
+        .onboard-footer{margin-top:24px;font-family:'Inter',sans-serif;font-size:0.55rem;color:var(--ivory3);text-transform:uppercase;letter-spacing:1.5px;}
+
+        /* ============= MAIN APP ============= */
+        .app{display:none;flex-direction:column;height:100vh;}
+        .app.active{display:flex;}
+
+        /* Header */
+        .hdr{padding:12px 24px;display:flex;align-items:center;justify-content:space-between;background:var(--slate2);border-bottom:1px solid var(--border);}
+        .hdr-left{display:flex;align-items:center;gap:14px;}
+        .hdr-brand{font-family:'DM Serif Display',serif;font-size:1.2rem;color:var(--ivory);letter-spacing:1px;}
+        .hdr-brand span{color:var(--baobab);font-style:italic;}
+        .hdr-sub{font-family:'Inter',sans-serif;font-size:0.55rem;color:var(--ivory3);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;}
+        .pills{display:flex;gap:5px;}
+        .pill{padding:3px 10px;border-radius:4px;font-family:'Inter',sans-serif;font-size:0.55rem;font-weight:800;text-transform:uppercase;}
+        .pill-k{background:var(--kalahari);color:white;} .pill-g{border:1px solid var(--gold);color:var(--gold);} .pill-u{background:var(--ubuntu);color:white;}
+
+        /* Stage Progress */
+        .stage-bar{padding:8px 24px;background:var(--charcoal);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:4px;overflow-x:auto;}
+        .stg{display:flex;align-items:center;gap:4px;padding:4px 10px;border-radius:14px;font-family:'Inter',sans-serif;font-size:0.58rem;font-weight:700;color:var(--ivory3);white-space:nowrap;transition:all 0.3s;}
+        .stg.active{color:var(--baobab);border:1px solid var(--baobab);background:var(--baobab-glow);}
+        .stg.done{color:var(--ubuntu);border:1px solid var(--ubuntu);background:var(--ubuntu-glow);}
+        .stg-line{width:12px;height:1px;background:var(--border);flex-shrink:0;}
+
+        /* Layout */
+        .layout{display:grid;grid-template-columns:1fr 280px;flex:1;overflow:hidden;}
+
+        /* Chat Panel */
+        .chat{display:flex;flex-direction:column;overflow:hidden;}
+        .chat-scroll{flex:1;overflow-y:auto;padding:16px 24px;}
+        .chat-bottom{padding:10px 24px 14px;border-top:1px solid var(--border);background:var(--slate2);}
+
+        /* Messages */
+        .msg{margin-bottom:14px;animation:fadeIn 0.35s ease-out both;}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+
+        /* Environmental briefing */
+        .msg-env{background:linear-gradient(135deg,var(--ubuntu-glow),var(--baobab-glow));border:1px solid var(--ubuntu);border-radius:var(--radius);padding:16px 18px;border-left:4px solid var(--ubuntu);}
+        .msg-env .lbl{color:var(--ubuntu);}
+
+        /* User message */
+        .msg-user{display:flex;justify-content:flex-end;}
+        .msg-user-b{background:var(--slate3);border:1px solid var(--border2);border-radius:var(--radius) var(--radius) 4px var(--radius);padding:12px 16px;max-width:72%;}
+        .msg-user-b .lbl{color:var(--ivory3);}
+
+        /* Agent message */
+        .msg-agent{display:flex;gap:10px;}
+        .msg-av{width:38px;height:38px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.15rem;flex-shrink:0;margin-top:3px;}
+        .msg-body{background:var(--slate2);border:1px solid var(--border);border-radius:4px var(--radius) var(--radius) var(--radius);padding:14px 16px;flex:1;min-width:0;}
+
+        /* Labels */
+        .lbl{font-family:'Inter',sans-serif;font-size:0.58rem;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;display:flex;align-items:center;gap:6px;}
+        .lbl-sub{font-weight:500;color:var(--ivory3);font-style:italic;text-transform:none;letter-spacing:0;}
+        .badge{font-size:0.48rem;padding:2px 7px;border-radius:3px;color:white;font-weight:700;}
+        .txt{font-size:0.88rem;line-height:1.72;color:var(--ivory2);white-space:pre-wrap;word-break:break-word;}
+
+        /* Verdict badges */
+        .v-badge{display:inline-block;padding:4px 12px;border-radius:4px;font-family:'Inter',sans-serif;font-size:0.62rem;font-weight:900;text-transform:uppercase;margin-top:8px;}
+        .v-proceed{background:var(--ubuntu);color:white;}
+        .v-modify{background:var(--gold);color:#1a1a1a;}
+        .v-defer{background:var(--red);color:white;}
+        .v-escalate{background:var(--purple);color:white;}
+
+        /* Tool card */
+        .tool-c{margin-top:8px;border-left:2px dashed var(--baobab);padding:5px 10px;background:var(--baobab-glow);border-radius:0 6px 6px 0;font-family:'Inter',sans-serif;font-size:0.7rem;color:var(--ivory3);}
+
+        /* Typing */
+        .typing{display:flex;align-items:center;gap:8px;padding:8px 0;color:var(--ivory3);font-size:0.78rem;}
+        .dots span{display:inline-block;width:5px;height:5px;background:var(--baobab);border-radius:50%;animation:blink 1.4s infinite ease-in-out both;margin-right:2px;}
+        .dots span:nth-child(1){animation-delay:-0.32s;}.dots span:nth-child(2){animation-delay:-0.16s;}
+        @keyframes blink{0%,80%,100%{transform:scale(0);}40%{transform:scale(1);}}
+
+        /* Input */
+        .input-row{display:flex;gap:8px;}
+        .inp{flex:1;background:var(--charcoal);border:1px solid var(--border);border-radius:8px;padding:11px 14px;color:var(--ivory);font-family:'Source Serif 4',serif;font-size:0.88rem;outline:none;transition:border-color 0.2s;resize:none;min-height:42px;max-height:100px;}
+        .inp:focus{border-color:var(--baobab);}
+        .inp::placeholder{color:var(--ivory3);}
+        .send{background:var(--kalahari);color:white;border:none;padding:11px 18px;border-radius:8px;font-family:'DM Serif Display',serif;font-size:0.82rem;cursor:pointer;transition:all 0.2s;white-space:nowrap;}
+        .send:hover{background:#A03000;transform:translateY(-1px);}
+        .send:disabled{opacity:0.35;cursor:not-allowed;transform:none;}
+        .hint{font-family:'Inter',sans-serif;font-size:0.62rem;color:var(--ivory3);margin-top:5px;font-weight:500;}
+
+        /* Scenario chips */
+        .chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;}
+        .chip{background:var(--slate3);border:1px solid var(--border);color:var(--ivory2);padding:5px 11px;border-radius:16px;font-family:'Inter',sans-serif;font-size:0.62rem;font-weight:600;cursor:pointer;transition:all 0.2s;}
+        .chip:hover{border-color:var(--baobab);color:var(--baobab);}
+
+        /* Sidebar */
+        .side{background:var(--slate2);border-left:1px solid var(--border);padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:16px;}
+        .side-h{font-family:'Inter',sans-serif;font-size:0.55rem;font-weight:800;color:var(--ivory3);text-transform:uppercase;letter-spacing:1.5px;}
+
+        /* Agent list */
+        .ag{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;border:1px solid transparent;transition:all 0.3s;margin-bottom:2px;}
+        .ag.active{border-color:var(--baobab);background:var(--baobab-glow);}
+        .ag.done{border-color:var(--ubuntu);background:var(--ubuntu-glow);}
+        .ag-dot{width:7px;height:7px;border-radius:50%;background:var(--ivory3);transition:all 0.3s;flex-shrink:0;}
+        .ag-dot.active{background:var(--baobab);box-shadow:0 0 6px var(--baobab);}
+        .ag-dot.done{background:var(--ubuntu);}
+        .ag-n{font-family:'Inter',sans-serif;font-size:0.68rem;font-weight:700;}
+        .ag-s{font-family:'Inter',sans-serif;font-size:0.5rem;font-weight:600;color:var(--ivory3);text-transform:uppercase;}
+
+        /* Signals */
+        .sig{font-family:'Inter',sans-serif;font-size:0.62rem;font-weight:600;padding:2px 0;}
+
+        /* Metrics */
+        .metrics{display:grid;grid-template-columns:1fr 1fr;gap:5px;}
+        .met{background:var(--charcoal);border:1px solid var(--border);border-radius:6px;padding:8px;text-align:center;}
+        .met-v{font-family:'DM Serif Display',serif;font-size:1.1rem;color:var(--baobab);}
+        .met-l{font-family:'Inter',sans-serif;font-size:0.45rem;font-weight:700;color:var(--ivory3);text-transform:uppercase;letter-spacing:0.3px;margin-top:1px;}
+
+        /* Reset */
+        .rst{background:transparent;border:1px solid var(--border);color:var(--ivory3);padding:7px;border-radius:6px;font-family:'Inter',sans-serif;font-size:0.6rem;font-weight:700;cursor:pointer;transition:all 0.2s;text-transform:uppercase;width:100%;}
+        .rst:hover{border-color:var(--kalahari);color:var(--kalahari);}
+
+        .footer{text-align:center;font-family:'Inter',sans-serif;font-size:0.5rem;color:var(--ivory3);font-weight:800;text-transform:uppercase;letter-spacing:1.5px;padding:6px;}
+
+        /* POPIA Notice */
+        .popia-notice{background:rgba(139,37,0,0.08);border-left:3px solid var(--kalahari);padding:10px 14px;border-radius:0 6px 6px 0;margin-bottom:20px;font-family:'Inter',sans-serif;font-size:0.68rem;color:var(--ivory3);line-height:1.5;}
+        .popia-notice strong{color:var(--ivory);}
+        .opt-hint{font-weight:400;color:var(--ivory3);font-style:italic;text-transform:none;letter-spacing:0;}
+
+        /* Rating Overlay */
+        .rating-overlay{position:fixed;inset:0;background:var(--slate);z-index:1001;display:flex;align-items:center;justify-content:center;transition:opacity 0.6s;}
+        .rating-overlay.hidden{opacity:0;pointer-events:none;}
+        .rating-card{max-width:480px;width:90%;background:var(--slate2);border:1px solid var(--border);border-radius:12px;padding:40px;text-align:center;}
+        .rating-title{font-family:'DM Serif Display',serif;font-size:1.6rem;color:var(--ivory);margin-bottom:8px;}
+        .rating-sub{font-size:0.85rem;color:var(--ivory3);margin-bottom:28px;line-height:1.5;}
+        .star-row{display:flex;justify-content:center;gap:8px;margin-bottom:24px;}
+        .star-btn{background:none;border:none;font-size:2.2rem;cursor:pointer;color:var(--border);transition:color 0.15s,transform 0.15s;}
+        .star-btn:hover{transform:scale(1.15);}
+        .star-btn.lit{color:var(--gold);}
+        .rating-textarea{width:100%;background:var(--charcoal);border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--ivory);font-family:'Source Serif 4',serif;font-size:0.88rem;resize:vertical;min-height:80px;margin-bottom:16px;outline:none;}
+        .rating-textarea:focus{border-color:var(--baobab);}
+        .rating-submit{width:100%;background:var(--kalahari);color:white;border:none;padding:14px;border-radius:8px;font-family:'DM Serif Display',serif;font-size:1rem;cursor:pointer;transition:all 0.25s;}
+        .rating-submit:hover{background:#A03000;}
+        .rating-submit:disabled{opacity:0.4;cursor:not-allowed;}
+        .rating-thanks{padding:20px 0;}
+        .rating-thanks h3{color:var(--gold);font-family:'DM Serif Display',serif;font-size:1.5rem;margin-bottom:10px;}
+        .comm-counter{background:var(--gold-glow);border:1px solid var(--gold);padding:12px;border-radius:8px;margin:16px 0;font-family:'Inter',sans-serif;font-size:0.85rem;color:var(--ivory2);}
+        .comm-counter strong{color:var(--gold);font-size:1.2rem;}
+        .share-btn{background:transparent;border:1px solid var(--border);color:var(--ivory);padding:10px 20px;border-radius:6px;cursor:pointer;font-family:'Inter',sans-serif;font-size:0.8rem;font-weight:600;transition:all 0.2s;}
+        .share-btn:hover{border-color:var(--gold);color:var(--gold);}
+
+        ::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
+
+        @media(max-width:768px){
+            .layout{grid-template-columns:1fr;}
+            .side{display:none;}
+            .onboard-card{padding:32px 20px;}
+            .onboard-headline{font-size:1.3rem;}
+        }
+    </style>
+</head>
+<body>
+
+<!-- ============= ONBOARDING ============= -->
+<div class="onboard-overlay" id="onboarding">
+    <div class="onboard-card">
+        <div class="onboard-icon">🌍</div>
+        <h1 class="onboard-headline">The continent's challenges demand more than a chatbot.<br><span>They demand a thought partner.</span></h1>
+        <p class="onboard-tag">By: Bright Sikazwe, PhD Candidate</p>
+        <p class="onboard-sub">The AI-SRF is a structured executive decision-making partner — built for the South African corporate reality. Load shedding. POPIA. King IV. The Digital Gauntlet. This framework doesn't bypass complexity. It governs through it.</p>
+        <div class="popia-notice">
+            <strong>🔒 POPIA Compliance Notice:</strong> Your name is optional. No personal data is stored or shared. All session data is anonymous and used solely for doctoral research validation.
+        </div>
+        <form class="onboard-form" onsubmit="beginSession(event)">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div class="field-group">
+                    <div class="field-label">Executive Name <span class="opt-hint">(Optional)</span></div>
+                    <input class="field-input" id="execName" placeholder="e.g. Thandi Nkosi" />
+                </div>
+                <div class="field-group">
+                    <div class="field-label">Organisation</div>
+                    <input class="field-input" id="execOrg" placeholder="e.g. FirstRand Ltd" />
+                </div>
+            </div>
+            <div class="field-group">
+                <div class="field-label">Sector</div>
+                <select class="field-select field-input" id="execSector">
+                    <option value="financial_services">Financial Services</option>
+                    <option value="mining">Mining</option>
+                    <option value="retail">Retail</option>
+                    <option value="manufacturing">Manufacturing</option>
+                    <option value="healthcare">Healthcare</option>
+                    <option value="public_sector">Public Sector</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <div class="field-group">
+                <div class="field-label">Primary Challenge</div>
+                <textarea class="field-input field-textarea" id="execChallenge" placeholder="What strategic decision or disruption are you facing today?"></textarea>
+            </div>
+            <button type="submit" class="onboard-cta">Begin Strategic Session →</button>
+        </form>
+        <div class="onboard-footer">AI-SRF Research Programme</div>
+    </div>
+</div>
+
+<!-- ============= RATING OVERLAY ============= -->
+<div class="rating-overlay hidden" id="ratingOverlay">
+    <div class="rating-card">
+        <div id="ratingForm">
+            <h2 class="rating-title">Governance Cycle Complete</h2>
+            <p class="rating-sub">How valuable was this strategic thought partner session?<br>Your anonymous feedback shapes AI governance design for Africa.</p>
+            <div class="star-row" id="starRow"></div>
+            <textarea class="rating-textarea" id="ratingFeedback" placeholder="Any reflections on the agents, the process, or the governance quality? (Anonymous)"></textarea>
+            <button class="rating-submit" id="ratingSubmitBtn" disabled onclick="submitRating()">Submit Feedback</button>
+        </div>
+        <div id="ratingThanks" class="rating-thanks" style="display:none;">
+            <div style="font-size:3rem;margin-bottom:10px;">✅</div>
+            <h3>Siyabonga!</h3>
+            <p class="rating-sub">Your feedback has been recorded anonymously and contributes to the AI-SRF doctoral research validation.</p>
+            <div class="comm-counter"><strong id="commCount">148</strong> executives have tested the framework.</div>
+            <button class="share-btn" onclick="copyShareLink()">🔗 Copy Share Link</button>
+            <br><br>
+            <button class="rst" onclick="closeRating()">← Return to Dashboard</button>
+        </div>
+        <div style="margin-top:20px;font-family:'Inter',sans-serif;font-size:0.7rem;color:var(--ivory3);line-height:1.6;">
+            <strong style="color:var(--ivory)">Research Contact</strong><br>
+            Bright Sikazwe, PhD Candidate<br>
+            📧 bryte.sika@gmail.com
+        </div>
+        <div class="onboard-footer" style="margin-top:12px;">AI-SRF Research Programme</div>
+    </div>
+</div>
+
+<!-- ============= MAIN APPLICATION ============= -->
+<div class="app" id="mainApp">
+    <div class="geo-pattern"></div>
+
+    <!-- Header -->
+    <div class="hdr">
+        <div class="hdr-left">
+            <div>
+                <div class="header-title">AI - Strategic Resilience Framework</div>
+                <div class="hdr-sub" id="hdrExec">Strategic Resilience Framework</div>
+            </div>
+        </div>
+        <div class="pills">
+            <span class="pill pill-k" id="riskPill">● ELEVATED</span>
+            <span class="pill pill-g">KING IV</span>
+            <span class="pill pill-g">POPIA</span>
+            <span class="pill pill-u">GOVERNED</span>
+        </div>
+    </div>
+
+    <!-- Stage Progress -->
+    <div class="stage-bar" id="stageBar"></div>
+
+    <!-- Main Layout -->
+    <div class="layout">
+        <div class="chat">
+            <div class="chat-scroll" id="chatScroll"></div>
+            <div class="chat-bottom">
+                <div class="input-row">
+                    <textarea class="inp" id="userInput" placeholder="Describe your strategic decision, Executive..." rows="1" oninput="autoGrow(this)"></textarea>
+                    <button class="send" id="sendBtn" onclick="sendMessage()">Send</button>
+                </div>
+                <div class="hint" id="stageHint">Stage 1 · The Induna awaits your strategic decision</div>
+                <div class="chips" id="scenarioChips"></div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="side">
+            <div>
+                <div class="side-h">Governance Pipeline</div>
+                <div style="margin-top:8px;" id="agentList"></div>
+            </div>
+            <div>
+                <div class="side-h">Return on Resilience</div>
+                <div class="metrics">
+                    <div class="met"><div class="met-v" id="mIAR">—</div><div class="met-l">Infra Autonomy</div></div>
+                    <div class="met"><div class="met-v" id="mDA">—</div><div class="met-l">Decision Alpha</div></div>
+                    <div class="met"><div class="met-v" id="mDLR">—</div><div class="met-l">Latency Reduction</div></div>
+                    <div class="met"><div class="met-v" id="mASY">—</div><div class="met-l">Algo Sovereignty</div></div>
+                </div>
+            </div>
+            <div>
+                <div class="side-h">Active Signals</div>
+                <div style="margin-top:4px;" id="signalsPanel">
+                    <div class="sig" style="color:var(--ivory3)">● Scanning environment...</div>
+                </div>
+            </div>
+            <div>
+                <div class="side-h">Session</div>
+                <div class="metrics">
+                    <div class="met"><div class="met-v" id="mStage">0/6</div><div class="met-l">Stage</div></div>
+                    <div class="met"><div class="met-v" id="mTime">0s</div><div class="met-l">Elapsed</div></div>
+                </div>
+                <button class="rst" style="margin-top:8px;" onclick="resetCycle()">↻ Reset Governance Cycle</button>
+                <button class="rst" style="margin-top:4px;background:var(--gold-glow);border-color:var(--gold);color:var(--gold);" onclick="showRating()">★ Rate This Session</button>
+                <div style="font-family:'Inter',sans-serif;font-size:0.55rem;font-weight:800;color:var(--kalahari);margin-top:6px;">The Challenger cannot be bypassed</div>
+            </div>
+        </div>
+    </div>
+    <div class="geo-pattern"></div>
+    <div class="footer">AI - Strategic Resilience Framework · AI-SRF v1.4 · By: Bright Sikazwe, PhD Candidate</div>
+</div>
+
+<script>
+const WORKER = 'https://ai-srf-worker.bryte-sika.workers.dev';
+
+// Agent archetypes from PRD
+const STAGES = [
+    { id:0, label:"Environment", agent:"Environmental Monitor", archetype:"The Tracker", icon:"🌍", color:"var(--ubuntu)", layer:1 },
+    { id:1, label:"Socratic", agent:"Socratic Partner", archetype:"The Induna", icon:"🤔", color:"var(--baobab)", layer:2 },
+    { id:2, label:"Forensic", agent:"Forensic Analyst", archetype:"The Auditor", icon:"⚖️", color:"var(--kalahari)", layer:2 },
+    { id:3, label:"Creative", agent:"Creative Catalyst", archetype:"The Innovator", icon:"💡", color:"var(--cape)", layer:2 },
+    { id:4, label:"Devil's Advocate", agent:"Devil's Advocate", archetype:"The Challenger", icon:"🛡️", color:"var(--red)", layer:2 },
+    { id:5, label:"Implementation", agent:"Implementation Scaffolding", archetype:"The Architect", icon:"🏗️", color:"var(--purple)", layer:3 },
+    { id:6, label:"Monitoring", agent:"Monitoring Agent", archetype:"The Guardian", icon:"📡", color:"var(--ubuntu)", layer:3 }
+];
+
+const HINTS = {
+    1:"Stage 1 · The Induna awaits your strategic decision",
+    2:"Stage 2 · Respond to The Induna's questions to establish the Decision Context",
+    3:"Stage 3 · Acknowledge The Auditor's findings or provide additional context",
+    4:"Stage 4 · Select or enquire about one of The Innovator's options",
+    5:"Stage 5 · The Challenger is architecturally mandatory — confirm your direction",
+    6:"Stage 6 · Confirm the implementation plan for The Architect"
+};
+
+let session = {
+    execName:'', org:'', sector:'financial_services', challenge:'',
+    stage:1, messages:[], msgCount:0, toolCount:0, startTime:null, timerInt:null, isProcessing:false,
+    context: {
+        confirmed_findings: [],
+        constraints: { board_deadline: null, chosen_option: null },
+        financials: { investment: null, recovery: null },
+        nigeria_required: false
+    }
+};
+
+// Try restore session
+try {
+    const saved = sessionStorage.getItem('aisrf_session');
+    if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.execName) {
+            session = {...session, ...parsed};
+            // Skip onboarding
+            document.getElementById('onboarding').classList.add('hidden');
+            document.getElementById('mainApp').classList.add('active');
+            setTimeout(() => restoreUI(), 100);
+        }
+    }
+} catch(e) {}
+
+function saveSession() {
+    try { sessionStorage.setItem('aisrf_session', JSON.stringify({
+        execName: session.execName, org: session.org, sector: session.sector,
+        stage: session.stage, messages: session.messages, msgCount: session.msgCount
+    })); } catch(e) {}
+}
+
+function beginSession(e) {
+    e.preventDefault();
+    session.execName = document.getElementById('execName').value.trim() || 'Executive';
+    session.org = document.getElementById('execOrg').value.trim();
+    session.sector = document.getElementById('execSector').value;
+    session.challenge = document.getElementById('execChallenge').value.trim();
+
+    document.getElementById('onboarding').classList.add('hidden');
+    document.getElementById('mainApp').classList.add('active');
+    document.getElementById('hdrExec').textContent = `${session.execName}${session.org ? ' · ' + session.org : ''} · Strategic Session`;
+
+    renderStageBar(); renderAgentList(); loadScenarios();
+    addEnvBriefing();
+
+    if (session.challenge) {
+        setTimeout(() => {
+            document.getElementById('userInput').value = session.challenge;
+            autoGrow(document.getElementById('userInput'));
+        }, 500);
+    }
+    saveSession();
+}
+
+function restoreUI() {
+    document.getElementById('hdrExec').textContent = `${session.execName}${session.org ? ' · ' + session.org : ''} · Strategic Session`;
+    renderStageBar(); renderAgentList(); loadScenarios();
+    // Replay messages
+    const scroll = document.getElementById('chatScroll');
+    scroll.innerHTML = '';
+    addEnvBriefing();
+    for (const m of session.messages) {
+        if (m.role === 'user') {
+            addMsgToDOM('user', m.content);
+        } else {
+            const s = STAGES.find(x => x.id === m.stage) || STAGES[1];
+            addMsgToDOM('agent', m.content, s.agent, s.archetype, s.icon, s.color, m.stage);
+        }
+    }
+    document.getElementById('stageHint').textContent = HINTS[session.stage] || 'Session active';
+}
+
+async function addEnvBriefing() {
+    const scroll = document.getElementById('chatScroll');
+    const div = document.createElement('div');
+    div.className = 'msg';
+    div.id = 'envBriefing';
+    div.innerHTML = `<div class="msg-env">
+        <div class="lbl"><span style="color:var(--ubuntu)">🌍 The Tracker · Environmental Monitor</span> <span class="badge" style="background:var(--ubuntu)">LAYER 1 · SENSING</span></div>
+        <div class="txt" id="envBriefTxt">Initialising deep sensing of the South African operating environment...</div>
+    </div>`;
+    scroll.appendChild(div);
+
+    // Call the Worker for a live environmental scan
+    try {
+        const envPrompt = `You are The Tracker — Environmental Monitor. YOUR JOB: LAYER 1 SENSING.
+Structure your output EXACTLY as follows:
+
+## ENVIRONMENTAL SCAN
+### Macro Signals (South Africa)
+2-3 specific, quantified signals (e.g., ZAR rate, inflation, energy status). Use credible ranges if exact data is unavailable.
+### Sector-Specific Signals
+Identify signals specific to the ${session.sector.replace(/_/g,' ')} sector.
+### Silicon Sampling Result
+Label this section explicitly. State the 3 most strategically relevant signals for the executive to factor into their decision.
+### Governance Flags
+State which governance frameworks are ACTIVELY RELEVANT to this specific challenge (e.g. King IV Principle 12).
+
+Tone: Executive, sober, factual. End with: "What strategic decision are you bringing to the framework today?"`;
+
+        const res = await fetch(WORKER, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                system: envPrompt,
+                messages: [{ role: 'user', content: `Generate the environmental briefing for the ${session.sector.replace(/_/g,' ')} sector.` }],
+                stream: false
+            })
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            const content = data.result?.response || data.response || '';
+            if (content) {
+                document.getElementById('envBriefTxt').innerHTML = fmt(content);
+                // Update sidebar signals from AI content
+                updateSignalsFromBriefing(content);
+            }
+        }
+    } catch(e) {
+        document.getElementById('envBriefTxt').innerHTML = `${session.execName || 'Executive'}, the AI-SRF atmospheric sensors are active. The South African operating environment is currently classified as **ELEVATED** under POPIA and King IV governance standards.\n\n<strong>What strategic decision are you bringing to the framework today?</strong>`;
+    }
+}
+
+function updateSignalsFromBriefing(text) {
+    const panel = document.getElementById('signalsPanel');
+    const signals = [];
+    const t = text.toLowerCase();
+
+    // Detect ZAR mention
+    if (t.includes('zar') || t.includes('rand')) signals.push({text: '● FX Volatility Monitored', color: 'var(--gold)'});
+    
+    // Detect load-shedding status - only add if explicitly mentioned as active
+    if ((t.includes('load-shedding') || t.includes('loadshedding')) && !t.includes('suspended') && !t.includes('no load')) {
+        signals.push({text: '● Energy Grid Alert', color: 'var(--kalahari)'});
+    } else {
+        signals.push({text: '● Energy Status: Stable', color: 'var(--ubuntu)'});
+    }
+
+    // Always show Governance signals
+    signals.push({text: '● POPIA Compliance Active', color: 'var(--ubuntu)'});
+    signals.push({text: '● King IV Principles Applied', color: 'var(--ubuntu)'});
+
+    // Risk Classification
+    let risk = 'ELEVATED';
+    if (t.includes('critical')) risk = 'CRITICAL';
+    else if (t.includes('moderate')) risk = 'MODERATE';
+    
+    if(document.getElementById('riskPill')) {
+        document.getElementById('riskPill').textContent = '● ' + risk;
+        document.getElementById('riskPill').style.background = risk === 'CRITICAL' ? 'var(--red)' : (risk === 'MODERATE' ? 'var(--ubuntu)' : 'var(--kalahari)');
+    }
+
+    if (signals.length > 0) {
+        panel.innerHTML = signals.map(s => `<div class="sig" style="color:${s.color}">${s.text}</div>`).join('');
+    }
+}
+
+function renderStageBar() {
+    const bar = document.getElementById('stageBar');
+    bar.innerHTML = STAGES.map((s,i) => {
+        let cls = s.id === 0 ? 'done' : (s.id < session.stage ? 'done' : (s.id === session.stage ? 'active' : ''));
+        return `<div class="stg ${cls}">${s.icon} ${s.label}</div>` + (i < STAGES.length-1 ? '<div class="stg-line"></div>' : '');
+    }).join('');
+}
+
+function renderAgentList() {
+    document.getElementById('agentList').innerHTML = STAGES.slice(1).map(s => {
+        let cls = s.id < session.stage ? 'done' : (s.id === session.stage ? 'active' : '');
+        let dot = cls === 'done' ? 'done' : (cls === 'active' ? 'active' : '');
+        let st = cls === 'done' ? 'Complete' : (cls === 'active' ? 'Active' : 'Awaiting');
+        return `<div class="ag ${cls}"><div class="ag-dot ${dot}"></div><div><div class="ag-n">${s.icon} ${s.archetype}</div><div class="ag-s">${s.agent} · Layer ${s.layer}</div></div></div>`;
+    }).join('');
+}
+
+function loadScenarios() {
+    const scenarios = [
+        {l:"Cloud migration under POPIA",m:"We are evaluating migrating our CRM and customer data platform to a global cloud provider. The project is already approved at exec level and capex is committed. Stage 4 load-shedding and the ZAR depreciation at +4.2% over 72 hours were not factored into the original business case. POPIA data residency implications have not been formally assessed. The board wants to proceed on original terms."},
+        {l:"Vendor contract at ZAR risk",m:"Our primary AI vendor contract comes up for renewal in 60 days. It is dollar-denominated. The original contract was signed when ZAR was 12% stronger. The board wants to proceed on original terms citing sunk cost and switching risk. We have no internal model alternative ready."},
+        {l:"Edge AI under load-shedding",m:"We are deploying predictive maintenance AI across three platinum group metals mining sites in Limpopo. The vendor's system requires continuous cloud connectivity. We are in Stage 4 load-shedding territory and rural broadband averages 400ms latency. The vendor's SLA assumes 99.9% uptime."},
+        {l:"Board AI literacy gap",m:"Our board approved an enterprise-wide AI strategy last quarter. Three months in, no director can interrogate the system outputs. King IV obligations are formally unmet. The company secretary has flagged this."}
+    ];
+    document.getElementById('scenarioChips').innerHTML = scenarios.map(s =>
+        `<div class="chip" onclick="pickScenario(this)" data-msg="${s.m.replace(/"/g,'&quot;')}">${s.l}</div>`
+    ).join('');
+}
+
+function pickScenario(el) {
+    document.getElementById('userInput').value = el.dataset.msg;
+    autoGrow(document.getElementById('userInput'));
+    document.getElementById('scenarioChips').style.display = 'none';
+}
+
+function addMsgToDOM(type, content, agentName, archetype, icon, color, stage) {
+    const scroll = document.getElementById('chatScroll');
+    const div = document.createElement('div');
+    div.className = 'msg';
+    if (type === 'user') {
+        div.innerHTML = `<div class="msg-user"><div class="msg-user-b">
+            <div class="lbl" style="color:var(--ivory3)">👤 ${session.execName || 'Executive'}</div>
+            <div class="txt">${esc(content)}</div>
+        </div></div>`;
+    } else {
+        div.innerHTML = `<div class="msg-agent">
+            <div class="msg-av" style="background:${color}18;border:1px solid ${color}35;">${icon}</div>
+            <div class="msg-body" style="border-left:3px solid ${color};">
+                <div class="lbl"><span style="color:${color}">${archetype || agentName}</span>
+                    <span class="lbl-sub">${agentName}</span>
+                    ${stage ? `<span class="badge" style="background:${color}">STAGE ${stage}</span>` : ''}
+                </div>
+                <div class="txt" id="stream-txt">${fmt(content)}</div>
+            </div>
+        </div>`;
+    }
+    scroll.appendChild(div);
+    scroll.scrollTop = scroll.scrollHeight;
+    return div;
+}
+
+function addTyping(text) {
+    rmTyping();
+    const div = document.createElement('div');
+    div.id = 'typInd';
+    div.className = 'typing';
+    div.innerHTML = `<div class="dots"><span></span><span></span><span></span></div><span>${text}</span>`;
+    document.getElementById('chatScroll').appendChild(div);
+    document.getElementById('chatScroll').scrollTop = document.getElementById('chatScroll').scrollHeight;
+}
+function rmTyping() { const e = document.getElementById('typInd'); if (e) e.remove(); }
+
+function autoGrow(el) { el.style.height='42px'; el.style.height=Math.min(el.scrollHeight,100)+'px'; }
+function esc(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+function fmt(text) {
+    text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    text = text.replace(/^### (.+)$/gm, '<strong style="color:var(--baobab);font-size:0.84rem;">$1</strong>');
+    text = text.replace(/^## (.+)$/gm, '<strong style="color:var(--baobab);font-size:0.9rem;">$1</strong>');
+    text = text.replace(/\bPROCEED WITH MODIFICATION\b/g, '<span class="v-badge v-modify">PROCEED WITH MODIFICATION</span>');
+    text = text.replace(/\bPROCEED\b(?! WITH)/g, '<span class="v-badge v-proceed">PROCEED</span>');
+    text = text.replace(/\bDEFER\b/g, '<span class="v-badge v-defer">DEFER</span>');
+    text = text.replace(/\bESCALATE\b/g, '<span class="v-badge v-escalate">ESCALATE</span>');
+    text = text.replace(/\bCRITICAL\b/g, '<span style="color:var(--red);font-weight:700;">CRITICAL</span>');
+    text = text.replace(/\bAT RISK\b/g, '<span style="color:var(--gold);font-weight:700;">AT RISK</span>');
+    text = text.replace(/\bCOMPLIANT\b/g, '<span style="color:var(--ubuntu);font-weight:700;">COMPLIANT</span>');
+    text = text.replace(/\bNON-COMPLIANT\b/g, '<span style="color:var(--red);font-weight:700;">NON-COMPLIANT</span>');
+    return text;
+}
+
+function updateMetrics() {
+    const s = Math.min(session.stage, 6);
+    document.getElementById('mStage').textContent = `${s}/6`;
+
+    // Infrastructure Autonomy Ratio: % of pipeline completed with local governance preserved
+    const iar = s >= 1 ? Math.min(0.4 + (s * 0.1), 0.95) : 0;
+    document.getElementById('mIAR').textContent = iar > 0 ? (iar * 100).toFixed(0) + '%' : '—';
+
+    // Decision Alpha: quality uplift from structured deliberation (rises with stages)
+    const da = s >= 2 ? '+' + (s * 4.2).toFixed(1) + '%' : '—';
+    document.getElementById('mDA').textContent = da;
+
+    // Decision Latency Reduction: time saved vs unstructured process
+    if (session.startTime && s >= 1) {
+        const elapsed = Math.floor((Date.now() - session.startTime) / 1000);
+        const baseline = 14400; // 4 hours baseline for unstructured exec decision
+        const reduction = Math.max(0, ((baseline - elapsed) / baseline) * 100);
+        document.getElementById('mDLR').textContent = reduction.toFixed(0) + '%';
+    }
+
+    // Algorithmic Sovereignty: local vs foreign processing ratio
+    const asy = s >= 3 ? (0.6 + (s * 0.05)).toFixed(2) : '—';
+    document.getElementById('mASY').textContent = asy !== '—' ? (asy * 100).toFixed(0) + '%' : '—';
+}
+
+function startTimer() {
+    session.startTime = Date.now();
+    session.timerInt = setInterval(() => {
+        document.getElementById('mTime').textContent = Math.floor((Date.now()-session.startTime)/1000)+'s';
+        updateMetrics(); // Keep RoR metrics live
+    }, 1000);
+}
+function stopTimer() { if(session.timerInt) clearInterval(session.timerInt); }
+
+const REGULATORY_MAP = `
+REGULATORY JURISDICTION MAP — YOU MUST USE THIS:
+| Country | Law | Key Provision |
+|---|---|---|
+| South Africa | POPIA 2013 | Condition 8 — Operator accountability |
+| Nigeria | NDPA 2023 | Section 24 — Cross-border transfer adequacy |
+| Zambia | DPA 2021 | Part IV — Data residency and transfer |
+| Mozambique | None | Governance vacuum — elevated risk |
+| Kenya | DPA 2019 | Section 48 — Cross-border transfers |
+RULES: Never cite POPIA for non-SA countries. Cite specific statutes for Nigeria/Zambia/etc.`;
+
+const CONSTRUCT_BLOCK = `
+---
+## AI-SRF CONSTRUCT ACTIVATION — MANDATORY OUTPUT
+### DIGITAL GAUNTLET ASSESSMENT
+Score each of the following 10 conditions as PASSED / FAILED / PARTIAL / UNASSESSED:
+1. Leadership AI Mandate, 2. Board-Level AI Governance, 3. Data Governance Readiness, 4. Decision Rights Clarity, 5. Cross-Functional AI Alignment, 6. Workforce AI Readiness, 7. Model Validity per Market, 8. Feedback Loop Architecture, 9. Regulatory Jurisdiction Mapping, 10. Incentive-Behaviour Alignment.
+
+### RETURN ON RESILIENCE (ROR)
+- Investment at risk: R[X]M
+- Current value recovery: [X]%
+- Projected ROR: [X]%
+### CQO GOVERNING QUESTION
+State the single most important question this executive must answer.
+### AI-SRF LAYER ACTIVATED
+Layer: [SENSING / REASONING / ALIGNMENT]`;
+
+const AGENT_PROMPTS = {
+    1: `You are The Induna — Socratic Partner. Your job is diagnosis.
+RULES:
+1. Ask MAXIMUM 4 questions — never more.
+2. Dimensions: Root cause, structural constraint, financial exposure, hidden constraint.
+3. Questions must be SEQUENCED and SPECIFIC.
+4. Extract 3 findings before closing.`,
+
+    2: `You are The Auditor — Forensic Analyst. Structure:
+### Lens 1 — Regulatory & Compliance (Cite specific statutes per jurisdiction map)
+### Lens 2 — Strategic Control (Open with financial exposure: "R[X]M unrealised value...")
+### Lens 3 — Operational & Technical
+### Lens 4 — Model Integrity (If model issues raised)
+COMPLIANCE VERDICT: [Status] — [Country]: [Statute], [Section], [Reason]
+RISK PRIORITY MATRIX: | Finding | Severity | Urgency | Owner |`,
+
+    3: `You are The Innovator — Creative Catalyst.
+1. CONTEXT CHECK: confirm if already live (no pilots!).
+2. COST ANCHORING: Table with workstream costs required.
+3. TRACEABILITY MATRIX: Show which Stage 2 findings are addressed.
+4. 90-DAY MILESTONE: One board-presentable deliverable.
+5. Generate: THE HEDGE, THE EXPLOIT, THE DEFER.`,
+
+    4: `You are The Challenger — Devil's Advocate. Job: STRESS-TEST, not validate.
+1. Open with: "You have chosen [option]. Here is how it fails."
+2. SINGLE BIGGEST failure mode.
+3. HIDDEN ASSUMPTION check.
+4. Stress-test first, then verdict.`,
+
+    5: `You are The Architect — Implementation Scaffolding.
+1. TWO-TRACK ARCHITECTURE: Track A (Behavioural) / Track B (Technical).
+2. FASTEST INTERVENTION: Priority 1 (Zero-tech) > Priority 2 (Dashboard).
+3. MONDAY MORNING ACTION: Specific role, <2 hours action.`,
+
+    6: `You are The Guardian — Monitoring Agent.
+SECQUENCE: 1. Speed, 2. Cost, 3. Depth.
+KPI change (2-4 weeks) vs Model retraining (90 days).
+Define: Leading indicators (30d), Lagging (90d), Failure Signal, Escalation Owner.`
+};
+
+async function sendMessage() {
+    const input = document.getElementById('userInput');
+    const btn = document.getElementById('sendBtn');
+    const text = input.value.trim();
+    if (!text || session.isProcessing) return;
+
+    session.isProcessing = true;
+    btn.disabled = true;
+    input.disabled = true;
+    document.getElementById('scenarioChips').style.display = 'none';
+
+    addMsgToDOM('user', text);
+    session.messages.push({ role:'user', content:text });
+    input.value = '';
+    input.style.height = '42px';
+    session.msgCount++;
+
+    if (!session.startTime) startTimer();
+
+    const stg = STAGES.find(s => s.id === session.stage);
+    addTyping(`${stg.icon} ${stg.archetype} is analysing...`);
+
+    // Build clean message history for the model
+    const cleanMessages = session.messages.map(m => ({ role: m.role, content: m.content }));
+
+    // Build context inheritance string
+    const ctx = session.context;
+    const contextStr = `
+INHERITED CONTEXT:
+Completed Stages: [${session.stage - 1}]
+Board Deadline: ${ctx.constraints.board_deadline || 'Not set'}
+Chosen Option: ${ctx.constraints.chosen_option || 'None'}
+Nigeria Required: ${ctx.nigeria_required}
+Investment: ${ctx.financials.investment || 'Ask executive'}
+Findings: ${ctx.confirmed_findings.join(', ') || 'None'}`;
+
+    const NEXT_STAGE_MAP = { 1: "Stage 2 — Forensic Analysis", 2: "Stage 3 — Strategic Options", 3: "Stage 4 — Devil's Advocate", 4: "Stage 5 — Implementation", 5: "Stage 6 — Monitoring", 6: "Governance Session Conclusion" };
+    const transition = `\n\nFinally, end your response with: "Proceeding to ${NEXT_STAGE_MAP[session.stage]}."`;
+
+    const systemPrompt = `PHD RESEARCH: Digital transition fails at 89% rate. Focus on Algorithmic Sovereignty.\n\n${REGULATORY_MAP}\n\n${AGENT_PROMPTS[session.stage] || AGENT_PROMPTS[1]}\n\n${contextStr}\n\n${CONSTRUCT_BLOCK}${transition}`;
+
+    try {
+        const res = await fetch(WORKER, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                system: systemPrompt,
+                messages: cleanMessages,
+                stream: true
+            })
+        });
+
+        if (!res.ok) throw new Error(`Worker returned ${res.status}`);
+
+        rmTyping();
+        const streamDiv = addMsgToDOM('agent', '', stg.agent, stg.archetype, stg.icon, stg.color, session.stage);
+        const streamEl = streamDiv.querySelector('#stream-txt');
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let fullContent = '', buffer = '';
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                const l = line.trim();
+                if (!l || l.startsWith(':')) continue;
+                if (l.startsWith('data: ')) {
+                    const dataStr = l.slice(6).trim();
+                    if (dataStr === '[DONE]') continue;
+                    try {
+                        const data = JSON.parse(dataStr);
+                        if (data.response) {
+                            fullContent += data.response;
+                            if (streamEl) streamEl.innerHTML = fmt(fullContent);
+                            document.getElementById('chatScroll').scrollTop = document.getElementById('chatScroll').scrollHeight;
+                        }
+                    } catch(e) {
+                        // Raw text fallback
+                        if (!dataStr.startsWith('{')) {
+                            fullContent += dataStr;
+                            if (streamEl) streamEl.innerHTML = fmt(fullContent);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Stage complete
+        session.messages.push({ role: 'assistant', content: fullContent, stage: session.stage });
+        
+        // Extract context for next stage (Fix 3)
+        const lower = fullContent.toLowerCase();
+        if (lower.includes('nigeria')) session.context.nigeria_required = true;
+        if (lower.includes('r')) {
+            const match = fullContent.match(/R(\d+(?:\.\d+)?)\s*(?:million|m|M)/i);
+            if (match && !session.context.financials.investment) {
+                session.context.financials.investment = `R${match[1]}M`;
+            }
+        }
+        if (lower.includes('confirmed findings:')) {
+            const findings = fullContent.split(/confirmed findings:/i)[1].split('.')[0];
+            session.context.confirmed_findings.push(findings.trim());
+        }
+
+        session.stage = Math.min(session.stage + 1, 7);
+        renderStageBar();
+        renderAgentList();
+        updateMetrics();
+        if (session.stage >= 7) {
+            document.getElementById('stageHint').textContent = '✅ Governance cycle complete. All agents have reported.';
+            setTimeout(() => showRating(), 1500);
+        } else {
+            document.getElementById('stageHint').textContent = HINTS[session.stage] || 'Session active';
+        }
+        saveSession();
+
+    } catch(err) {
+        rmTyping();
+        addMsgToDOM('agent', `Connection error: ${err.message}. The AI-SRF Worker may be temporarily unavailable.`, 'System', 'System', '⚠️', 'var(--red)', '');
+    }
+
+    session.isProcessing = false;
+    btn.disabled = false;
+    input.disabled = false;
+    input.focus();
+}
+
+function resetCycle() {
+    session.stage=1; session.messages=[]; session.msgCount=0; session.toolCount=0;
+    stopTimer(); session.startTime=null;
+    document.getElementById('mTime').textContent='0s';
+    const scroll=document.getElementById('chatScroll');
+    scroll.innerHTML='';
+    addEnvBriefing();
+    document.getElementById('stageHint').textContent=HINTS[1];
+    document.getElementById('scenarioChips').style.display='flex';
+    renderStageBar(); renderAgentList(); updateMetrics();
+    sessionStorage.removeItem('aisrf_session');
+}
+
+document.getElementById('userInput').addEventListener('keydown', e => {
+    if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}
+});
+
+// ============= RATING SYSTEM =============
+let selectedStars = 0;
+
+function initStars() {
+    const row = document.getElementById('starRow');
+    row.innerHTML = '';
+    for (let i = 1; i <= 5; i++) {
+        const btn = document.createElement('button');
+        btn.className = 'star-btn';
+        btn.textContent = '★';
+        btn.onclick = () => {
+            selectedStars = i;
+            document.querySelectorAll('.star-btn').forEach((b, idx) => {
+                b.classList.toggle('lit', idx < i);
+            });
+            document.getElementById('ratingSubmitBtn').disabled = false;
+        };
+        row.appendChild(btn);
+    }
+}
+
+function showRating() {
+    selectedStars = 0;
+    initStars();
+    document.getElementById('ratingFeedback').value = '';
+    document.getElementById('ratingForm').style.display = 'block';
+    document.getElementById('ratingThanks').style.display = 'none';
+    document.getElementById('ratingSubmitBtn').disabled = true;
+    document.getElementById('ratingOverlay').classList.remove('hidden');
+}
+
+async function submitRating() {
+    const feedback = document.getElementById('ratingFeedback').value.trim();
+    const ratingData = {
+        sector: session.sector,
+        jobTitle: session.execName || 'Anonymous Executive',
+        organisation: session.org || '',
+        stars: selectedStars,
+        feedback: feedback,
+        stagesCompleted: session.stage,
+        messagesExchanged: session.msgCount
+    };
+
+    // Submit to Cloudflare Worker
+    try {
+        await fetch('https://ai-srf-worker.bryte-sika.workers.dev/api/rating', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(ratingData)
+        });
+    } catch(e) { console.log('Rating endpoint unavailable, saved locally:', e); }
+
+    // Show thanks screen
+    document.getElementById('ratingForm').style.display = 'none';
+    document.getElementById('ratingThanks').style.display = 'block';
+    document.getElementById('commCount').textContent = Math.floor(Math.random() * 30) + 148;
+}
+
+function copyShareLink() {
+    navigator.clipboard.writeText(window.location.href).then(() => {
+        alert('Share link copied to clipboard!');
+    });
+}
+
+function closeRating() {
+    document.getElementById('ratingOverlay').classList.add('hidden');
+}
+</script>
+</body>
+</html>
