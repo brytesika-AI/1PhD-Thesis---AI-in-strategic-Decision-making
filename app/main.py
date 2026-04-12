@@ -52,7 +52,15 @@ def format_json_as_markdown(data):
         if isinstance(value, list):
             for item in value:
                 if isinstance(item, dict):
-                    md += " | ".join([f"**{v}**" if k in ["status", "severity", "verdict"] else str(v) for k, v in item.items()]) + "  \n"
+                    # Specialized signal/source rendering
+                    signal = item.get("signal", item.get("indicator", ""))
+                    src = item.get("source", "")
+                    impl = item.get("implication", item.get("target", ""))
+                    
+                    if signal and src:
+                        md += f"| {signal} | **{src}** | {impl} |  \n"
+                    else:
+                        md += " | ".join([f"**{v}**" if k in ["status", "severity", "verdict", "source"] else str(v) for k, v in item.items()]) + "  \n"
                 else:
                     md += f"- {item}\n"
         elif isinstance(value, dict):

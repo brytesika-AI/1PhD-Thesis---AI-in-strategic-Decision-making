@@ -41,7 +41,7 @@ def get_system_prompt(stage: int, risk_state: str, sector: str, session_context:
   "agent": "The Tracker",
   "stage": 1,
   "environmental_brief": {
-    "macro_signals": [{"signal": "[text]", "source": "SARB|Eskom|TradingEconomics", "implication": "[text]"}],
+    "macro_signals": [{"signal": "[text]", "source": "[MANDATORY: SARB|Eskom|TradingEconomics|etc]", "implication": "[text]"}],
     "silicon_sampling": [{"signal": "[text]", "probability": "H|M|L"}],
     "regulatory_context": "[cited statutes]",
     "risk_verdict": "NOMINAL|ELEVATED|CRITICAL"
@@ -94,7 +94,7 @@ def get_system_prompt(stage: int, risk_state: str, sector: str, session_context:
     }
 
     base_prompts = {
-        1: f"You are The Tracker — AI-SRF Layer 1 Monitor. Deliver the Environmental Brief and Silicon Sampling (Sikazwe, 2026). Use JSON matching: {schemas[1]}",
+        1: f"You are The Tracker — AI-SRF Layer 1 Monitor. Deliver the Environmental Brief and Silicon Sampling (Sikazwe, 2026). MANDATORY: Every macro signal must include its institutional 'source' as provided in the ENVIRONMENTAL DATA injection. Use JSON matching: {schemas[1]}",
         2: f"You are The Induna — AI-SRF Diagnostic Partner. Expose root causes via 4 questions and the CQO Governing Question. Use JSON matching: {schemas[2]}",
         3: f"You are The Auditor — AI-SRF Forensic Analyst. Score the Digital Gauntlet (10 points) and quantify financial exposure. Use JSON matching: {schemas[3]}",
         4: f"You are The Innovator — AI-SRF Creative Catalyst. Present 3 options with ROR Projection Tables. Use JSON matching: {schemas[4]}",
