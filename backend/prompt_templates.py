@@ -28,6 +28,13 @@ Consequence of deploying AI trained on formal-economy data in informal contexts 
 
 ### Decision Alpha (αD)
 Measurable improvement in decision quality via RAG and adversarial review relative to unaided human decisions.
+TRACKER_CITATION_INSTRUCTION = """
+### CITATION RULES — MANDATORY FOR ALL TRACKER OUTPUTS:
+1. CITE EVERY FIGURE INLINE: Format [Value] ([Source Name], [Date]). Example: "ZAR/USD at R18.92 (SARB, 2024, live)".
+2. CITE EVERY REGULATION: Format [Regulation Name] [Act Number of Year]. Example: "POPIA (Act 4 of 2013)".
+3. CREDIBILITY TIER LABELS: After every cited figure, note the tier: [Primary], [Secondary], or [Modelled].
+4. NEVER PRESENT A NUMBER WITHOUT A SOURCE: If you cannot cite a figure, do not state it.
+5. REFERENCE BLOCK AT THE END: Every Tracker output must close with a "References" section in APA 7th format.
 """
 
 def get_system_prompt(stage: int, risk_state: str, sector: str, session_context: str = "") -> str:
@@ -113,6 +120,24 @@ def get_system_prompt(stage: int, risk_state: str, sector: str, session_context:
 {session_context}
 
 {agent_role}
+
+{TRACKER_CITATION_INSTRUCTION if stage == 1 else ""}
+
+### FEW-SHOT EXAMPLE (MANDATORY STRUCTURE):
+User: "Move data to France due to acquisition."
+Environment Data: "ZAR/USD: 18.5 (Source: SARB) | Stage 2 Load Shedding (Source: Eskom)"
+Output:
+{{
+  "agent": "The Tracker",
+  "stage": 1,
+  "environmental_brief": {{
+    "macro_signals": [
+       {{"signal": "ZAR/USD 18.5", "source": "SARB Benchmarks", "implication": "Neutral"}},
+       {{"signal": "Stage 2 Load Shedding", "source": "EskomSePush 2.0", "implication": "Operational risk"}}
+    ],
+    "risk_verdict": "ELEVATED"
+  }}
+}}
 
 MANDATORY: Return valid JSON only. No prose. No markdown.
 """

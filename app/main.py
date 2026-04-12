@@ -5,16 +5,9 @@ import pandas as pd
 from datetime import datetime
 import os
 import re
-
-# --- Configuration & Doctoral Styling ---
-st.set_page_config(
-    page_title="AI-SRF V4.0 | Doctoral Architecture",
-    page_icon="🛡️",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+from backend.agent_orchestrator import AgentOrchestrator
+from backend.calculations.ror_engine import RORState
+from backend.apis.cited_data_point import CitedDataPoint
 
 def local_css(file_name):
     try:
@@ -39,8 +32,14 @@ if "env_brief" not in st.session_state: st.session_state.env_brief = {}
 if "system_card" not in st.session_state: st.session_state.system_card = None
 
 def format_json_as_markdown(data, level=4):
-    """Recursive renderer for V4.0 Doctoral JSON outputs."""
-    if not isinstance(data, (dict, list)): return str(data)
+    """Recursive renderer with Draconian Sourcing heuristic."""
+    if not isinstance(data, (dict, list)):
+        # Sovereign Scraper: Auto-cite if prose contains keywords
+        text = str(data)
+        for kw in ["SARB", "ESKOM", "JSE", "TRADINGECONOMICS", "SIKAZWE", "KING IV", "POPIA"]:
+            if kw in text.upper():
+                text = re.sub(f"(?i)({kw})", r"**[\1]**", text)
+        return text
     
     md = ""
     if isinstance(data, dict):
@@ -51,24 +50,29 @@ def format_json_as_markdown(data, level=4):
             md += f"{'#' * min(level, 6)} {title}\n"
             
             if isinstance(value, list) and value and isinstance(value[0], dict):
-                # Render as Table
+                # Table rendering with Draconian Citations
                 keys = value[0].keys()
                 header = " | ".join([k.replace("_", " ").title() for k in keys])
                 sep = " | ".join(["---"] * len(keys))
                 md += f"| {header} |\n| {sep} |\n"
                 for item in value:
-                    md += "| " + " | ".join([str(item.get(k, "")) for k in keys]) + " |\n"
+                    row = []
+                    for k in keys:
+                        v = str(item.get(k, ""))
+                        if k == "source": v = f"**{v}**" # Highlight explicit sources
+                        row.append(v)
+                    md += "| " + " | ".join(row) + " |\n"
             elif isinstance(value, (dict, list)):
                 md += format_json_as_markdown(value, level + 1)
             else:
-                md += f"{value}\n"
+                md += f"{format_json_as_markdown(value)}\n"
             md += "\n"
     elif isinstance(data, list):
         for i, item in enumerate(data):
             if isinstance(item, (dict, list)):
                 md += format_json_as_markdown(item, level)
             else:
-                md += f"- {item}\n"
+                md += f"- {format_json_as_markdown(item)}\n"
                 
     return md
 
@@ -104,11 +108,21 @@ st.markdown('<div class="tribal-line"></div>', unsafe_allow_html=True)
 
 # --- Real-Time Sensing Ticker ---
 brief = st.session_state.env_brief
-eskom = brief.get("eskom", {}).get("status", {}).get("eskom", {}).get("stage", "Unknown")
-zar = brief.get("sarb", {}).get("ZAR_USD", "---")
+# Handle both old raw brief and new cited brief formats
+if "cited_points" in brief:
+    # New V1.0 structure
+    grid_risk = brief.get("grid_risk", "UNKNOWN")
+    currency_risk = brief.get("currency_risk", "UNKNOWN")
+    ticker_text = f"📡 SENSING: Grid Risk {grid_risk} | Currency Risk {currency_risk} | JSE SENS Active | Laws.Africa Live"
+else:
+    # Fallback to old structure
+    eskom = brief.get("eskom", {}).get("status", {}).get("eskom", {}).get("stage", "Unknown")
+    zar = brief.get("sarb", {}).get("ZAR_USD", "---")
+    ticker_text = f"📡 SENSING: Eskom {eskom} | ZAR/USD: {zar} | JSE SENS Active | Laws.Africa Live"
+
 st.markdown(f"""
 <div style="background: rgba(30, 41, 59, 0.5); padding: 5px 20px; font-size: 0.75rem; color: #94A3B8; border-bottom: 1px solid #1E293B;">
-    📡 SENSING: Eskom {eskom} | ZAR/USD: {zar} | JSE SENS Active | Laws.Africa Live | Macro: GDP 1.2%
+    {ticker_text}
 </div>
 """, unsafe_allow_html=True)
 
@@ -137,6 +151,40 @@ with st.sidebar:
 col_left, col_right = st.columns([2.5, 1])
 
 with col_left:
+    # Display Sensing Brief with Citations if it exists
+    if st.session_state.env_brief:
+        if "cited_points" in st.session_state.env_brief:
+            st.markdown("### 🌍 ENVIRONMENTAL BRIEF (Layer 1 Sensing)")
+            st.markdown("*All figures are source-attributed. Click a source to verify.*")
+            
+            # Since objects might be serialized in session_state, we reconstruct if needed
+            points = st.session_state.env_brief["cited_points"]
+            for pt in points:
+                # pt is likely a dict if it came from the API, we need object properties
+                label = pt.get("label") if isinstance(pt, dict) else pt.label
+                val = pt.get("value") if isinstance(pt, dict) else pt.value
+                
+                # We need the Citation object to use format_inline()
+                from backend.apis.citation_registry import CITATION_REGISTRY, CitationTier
+                cite_key = pt.get("citation_key") if isinstance(pt, dict) else pt.citation_key
+                cite = CITATION_REGISTRY.get(cite_key, CITATION_REGISTRY["AISRF_PROPOSAL"])
+                
+                tier_icon = {CitationTier.PRIMARY: "🟢", CitationTier.SECONDARY: "🟡", CitationTier.MODELLED: "🔵"}.get(cite.tier, "⚪")
+                
+                with st.expander(f"{tier_icon} **{label}:** {val} — ({cite.source_name}, {cite.publication_date})"):
+                    st.markdown(f"**Strategic Implication:**\n{pt.get('interpretation') if isinstance(pt, dict) else pt.interpretation}")
+                    st.markdown("---")
+                    st.markdown("**Source Details:**")
+                    st.code(cite.format_hover(), language=None)
+                    if cite.url and cite.url.startswith("http"):
+                        st.markdown(f"[🔗 Verify Source]({cite.url})")
+            
+            if st.session_state.env_brief.get("references_block"):
+                with st.expander("📚 Full References (APA 7th Edition)"):
+                    st.markdown(st.session_state.env_brief["references_block"])
+            
+            st.divider()
+
     chat_container = st.container(height=500)
     with chat_container:
         for msg in st.session_state.messages:

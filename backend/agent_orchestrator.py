@@ -4,14 +4,11 @@ import asyncio
 from typing import Dict, List, Optional
 from datetime import datetime
 from backend.model_client import ModelClient
+from azure.ai.inference.models import SystemMessage, UserMessage, AssistantMessage
 from backend.rag_engine import RAGEngine
 from backend.prompt_templates import get_system_prompt
-from azure.ai.inference.models import SystemMessage, UserMessage, AssistantMessage
-from azure.core.credentials import AzureKeyCredential
-from azure.ai.inference.aio import ChatCompletionsClient
-
-from backend.calculations.ror_engine import RORState, extract_financials_from_input
-from backend.apis.sa_sensing import get_full_environmental_brief
+from backend.apis.cited_tracker_builder import build_cited_tracker_output
+from backend.calculations.ror_engine import RORState
 
 class AgentOrchestrator:
     """
@@ -73,10 +70,10 @@ class AgentOrchestrator:
             7: "The Guardian"
         }
 
-        # STAGE 0: Initial Sensing
-        yield {"round": 0, "step": "sensing", "agent": "Intelligence Core", "content": "Initializing SA Environmental Brief..."}
-        env_brief = await get_full_environmental_brief(sector)
-        session_context["env_brief"] = env_brief
+        # STAGE 0: Initial Sensing with Citations
+        yield {"round": 0, "step": "sensing", "agent": "Intelligence Core", "content": "Initializing Cited Environmental Brief..."}
+        cited_brief = await build_cited_tracker_output(sector)
+        session_context["env_brief"] = cited_brief
         
         for stage_id in range(1, 8):
             agent_name = agent_map[stage_id]
@@ -85,11 +82,8 @@ class AgentOrchestrator:
             # Build injected context
             injected_context = f"CURRENT ROR STATE: {ror_state.format_full_ror_block()}\n"
             if stage_id == 1:
-                # Standardize sensing signals for doctoral auditability
-                signals = env_brief.get("signals", {})
-                brief_str = " | ".join([f"{k.upper()}: {v['value']} (Source: {v['source']})" for k, v in signals.items()])
-                injected_context += f"ENVIRONMENTAL SENSING SIGNALS (MANDATORY CITATION): {brief_str}\n"
-                injected_context += f"FULL SENSING PAYLOAD: {json.dumps(env_brief.get('full_data', env_brief))}\n"
+                # Inject the Cited Brief for the Tracker
+                injected_context += cited_brief["prompt_injection"]
             
             system_prompt = get_system_prompt(stage_id, risk_state, sector, injected_context)
             messages = [SystemMessage(content=system_prompt)] + history
