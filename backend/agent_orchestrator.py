@@ -85,7 +85,11 @@ class AgentOrchestrator:
             # Build injected context
             injected_context = f"CURRENT ROR STATE: {ror_state.format_full_ror_block()}\n"
             if stage_id == 1:
-                injected_context += f"ENVIRONMENTAL DATA: {json.dumps(env_brief)}\n"
+                # Standardize sensing signals for doctoral auditability
+                signals = env_brief.get("signals", {})
+                brief_str = " | ".join([f"{k.upper()}: {v['value']} (Source: {v['source']})" for k, v in signals.items()])
+                injected_context += f"ENVIRONMENTAL SENSING SIGNALS (MANDATORY CITATION): {brief_str}\n"
+                injected_context += f"FULL SENSING PAYLOAD: {json.dumps(env_brief.get('full_data', env_brief))}\n"
             
             system_prompt = get_system_prompt(stage_id, risk_state, sector, injected_context)
             messages = [SystemMessage(content=system_prompt)] + history

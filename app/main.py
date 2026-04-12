@@ -38,37 +38,38 @@ if "ror_state" not in st.session_state: st.session_state.ror_state = RORState()
 if "env_brief" not in st.session_state: st.session_state.env_brief = {}
 if "system_card" not in st.session_state: st.session_state.system_card = None
 
-def format_json_as_markdown(data):
-    """Render structured agent JSON as readable boards."""
-    if not isinstance(data, dict): return str(data)
+def format_json_as_markdown(data, level=4):
+    """Recursive renderer for V4.0 Doctoral JSON outputs."""
+    if not isinstance(data, (dict, list)): return str(data)
     
     md = ""
-    for key, value in data.items():
-        if key in ["agent", "stage", "aisrf_citation"]: continue
-        
-        title = key.replace("_", " ").upper()
-        md += f"#### {title}\n"
-        
-        if isinstance(value, list):
-            for item in value:
-                if isinstance(item, dict):
-                    # Specialized signal/source rendering
-                    signal = item.get("signal", item.get("indicator", ""))
-                    src = item.get("source", "")
-                    impl = item.get("implication", item.get("target", ""))
-                    
-                    if signal and src:
-                        md += f"| {signal} | **{src}** | {impl} |  \n"
-                    else:
-                        md += " | ".join([f"**{v}**" if k in ["status", "severity", "verdict", "source"] else str(v) for k, v in item.items()]) + "  \n"
-                else:
-                    md += f"- {item}\n"
-        elif isinstance(value, dict):
-            for k, v in value.items():
-                md += f"- **{k.replace('_', ' ')}**: {v}\n"
-        else:
-            md += f"{value}\n"
-        md += "\n"
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if key in ["agent", "stage", "aisrf_citation"]: continue
+            
+            title = key.replace("_", " ").upper()
+            md += f"{'#' * min(level, 6)} {title}\n"
+            
+            if isinstance(value, list) and value and isinstance(value[0], dict):
+                # Render as Table
+                keys = value[0].keys()
+                header = " | ".join([k.replace("_", " ").title() for k in keys])
+                sep = " | ".join(["---"] * len(keys))
+                md += f"| {header} |\n| {sep} |\n"
+                for item in value:
+                    md += "| " + " | ".join([str(item.get(k, "")) for k in keys]) + " |\n"
+            elif isinstance(value, (dict, list)):
+                md += format_json_as_markdown(value, level + 1)
+            else:
+                md += f"{value}\n"
+            md += "\n"
+    elif isinstance(data, list):
+        for i, item in enumerate(data):
+            if isinstance(item, (dict, list)):
+                md += format_json_as_markdown(item, level)
+            else:
+                md += f"- {item}\n"
+                
     return md
 
 # --- Top Dashboard: Four ROR Indicators ---
