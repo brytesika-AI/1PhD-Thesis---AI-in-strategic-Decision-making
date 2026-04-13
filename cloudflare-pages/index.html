@@ -186,11 +186,19 @@
         .share-btn{background:transparent;border:1px solid var(--border);color:var(--ivory);padding:10px 20px;border-radius:6px;cursor:pointer;font-family:'Inter',sans-serif;font-size:0.8rem;font-weight:600;transition:all 0.2s;}
         .share-btn:hover{border-color:var(--gold);color:var(--gold);}
 
+        .side-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);backdrop-filter:blur(2px);z-index:900;opacity:0;pointer-events:none;transition:opacity 0.3s;}
+        .side-overlay.active{opacity:1;pointer-events:auto;}
+
+        .nav-toggle{display:none;background:transparent;border:1px solid var(--border);color:var(--ivory);padding:8px 12px;border-radius:6px;font-size:1.2rem;cursor:pointer;transition:all 0.2s;margin-left:12px;}
+        .nav-toggle:hover{border-color:var(--baobab);color:var(--baobab);}
+
         ::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
 
         @media(max-width:768px){
             .layout{grid-template-columns:1fr;}
-            .side{display:none;}
+            .side{position:fixed;top:0;right:-100%;height:100vh;width:280px;z-index:950;box-shadow:-5px 0 20px rgba(0,0,0,0.5);transition:right 0.3s ease-in-out;padding-top:20px;}
+            .side.active{right:0;}
+            .nav-toggle{display:block;}
             .onboard-card{padding:32px 20px;}
             .onboard-headline{font-size:1.3rem;}
         }
@@ -270,6 +278,8 @@
 </div>
 
 <!-- ============= MAIN APPLICATION ============= -->
+<div id="sideOverlay" class="side-overlay" onclick="toggleNav()"></div>
+
 <div class="app" id="mainApp">
     <div class="geo-pattern"></div>
 
@@ -286,6 +296,7 @@
             <span class="pill pill-g">KING IV</span>
             <span class="pill pill-g">POPIA</span>
             <span class="pill pill-u">GOVERNED</span>
+            <button class="nav-toggle" id="navToggle" onclick="toggleNav()">☰</button>
         </div>
     </div>
 
@@ -345,6 +356,15 @@
 
 <script>
 const WORKER = 'https://ai-srf-worker.bryte-sika.workers.dev';
+
+function toggleNav(force) {
+    const side = document.querySelector('.side');
+    const overlay = document.getElementById('sideOverlay');
+    const isOpen = side.classList.contains('active');
+    const next = force !== undefined ? force : !isOpen;
+    side.classList.toggle('active', next);
+    overlay.classList.toggle('active', next);
+}
 
 // Agent archetypes from PRD
 const STAGES = [
@@ -861,6 +881,7 @@ function resetCycle() {
     document.getElementById('scenarioChips').style.display='flex';
     renderStageBar(); renderAgentList(); updateMetrics();
     sessionStorage.removeItem('aisrf_session');
+    if (window.innerWidth <= 768) toggleNav(false);
 }
 
 document.getElementById('userInput').addEventListener('keydown', e => {
@@ -933,6 +954,7 @@ function copyShareLink() {
 
 function closeRating() {
     document.getElementById('ratingOverlay').classList.add('hidden');
+    if (window.innerWidth <= 768) toggleNav(false);
 }
 </script>
 </body>
