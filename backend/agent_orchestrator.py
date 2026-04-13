@@ -9,6 +9,7 @@ from backend.rag_engine import RAGEngine
 from backend.prompt_templates import get_system_prompt
 from backend.apis.cited_tracker_builder import build_cited_tracker_output
 from backend.calculations.ror_engine import RORState
+from backend.notifier import EmailNotifier
 
 class AgentOrchestrator:
     """
@@ -20,6 +21,7 @@ class AgentOrchestrator:
     def __init__(self):
         self.model_client = ModelClient()
         self.rag_engine = RAGEngine()
+        self.notifier = EmailNotifier()
         
         status = self.model_client.provider_status()
         self.model_name = status["model"]
@@ -114,6 +116,11 @@ class AgentOrchestrator:
                 # Stage 7 Audit trail: Generate System Card
                 if stage_id == 7:
                     system_card = self.rag_engine.generate_ai_system_card("SESSION-UUID", "COMPLIANT", list(agent_map.values()))
+                    
+                    # Trigger Email Notification
+                    final_ror = parsed_json.get("final_ror", {})
+                    self.notifier.send_governance_brief(final_ror, risk_state, sector)
+
                     yield {"round": 7, "step": "audit", "agent": "Guardian", "content": system_card}
 
             except Exception as e:

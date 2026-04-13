@@ -28,6 +28,22 @@ async function getImprovementRules(agentName, env) {
   } catch (err) { return ""; }
 }
 
+async function sendEmailViaGoogle(data, env) {
+  const scriptUrl = env.GOOGLE_SCRIPT_URL; // Add this to wrangler.toml or set via secret
+  if (!scriptUrl) return console.log("[EMAIL] GOOGLE_SCRIPT_URL missing");
+
+  try {
+    const res = await fetch(scriptUrl, {
+      method: "POST",
+      body: JSON.stringify(data)
+    });
+    const result = await res.json();
+    console.log("[EMAIL] Google Script response:", result);
+  } catch (err) {
+    console.error("[EMAIL] Failed to send:", err);
+  }
+}
+
 export default {
   async fetch(request, env, ctx) {
     const cors = {
@@ -43,11 +59,16 @@ export default {
 
       // ── API: Anonymous Executive Rating ──
       if (url.pathname === '/api/rating' && request.method === 'POST') {
-        const { sector, jobTitle, stars, feedback } = await request.json();
+        const ratingData = await request.json();
+        const { sector, jobTitle, stars, feedback } = ratingData;
         const key = `rating:${Date.now()}:${crypto.randomUUID()}`;
         if (env.RATINGS) {
-          await env.RATINGS.put(key, JSON.stringify({ sector, jobTitle, stars, feedback, ts: Date.now() }));
+          await env.RATINGS.put(key, JSON.stringify({ ...ratingData, ts: Date.now() }));
         }
+        
+        // Asynchronously trigger email notification via Google Proxy
+        ctx.waitUntil(sendEmailViaGoogle(ratingData, env));
+        
         return new Response(JSON.stringify({ ok: true }), { headers: cors });
       }
 
@@ -88,7 +109,15 @@ export default {
 EXECUTIVE REGISTER: Every sentence must carry a decision, finding, or number.
 SENTENCE ECONOMY: Max 20 words for findings. Active voice only.
 NUMBERS ANCHOR EVERY CLAIM: R-values and percentages required.
-NO PLACEHOLDERS / NO FILLER: (Sikazwe, 2026) protocol.`;
+NO PLACEHOLDERS / NO FILLER: (Sikazwe, 2026) protocol.
+
+### CITATION RULES — MANDATORY FOR ALL TRACKER OUTPUTS:
+1. CITE EVERY FIGURE INLINE: Format [Value] ([Source Name], [Date]). Example: "ZAR/USD at R18.92 (SARB, 2024, live)".
+2. CITE EVERY REGULATION: Format [Regulation Name] [Act Number of Year]. Example: "POPIA (Act 4 of 2013)".
+3. CREDIBILITY TIER LABELS: After every cited figure, note the tier: [Primary], [Secondary], or [Modelled].
+4. NEVER PRESENT A NUMBER WITHOUT A SOURCE: If you cannot cite a figure, do not state it.
+5. REFERENCE BLOCK AT THE END: Every Tracker output must close with a "References" section in APA 7th format.
+`;
 
       const sanitise = (text = '') =>
         text

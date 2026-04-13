@@ -7,7 +7,6 @@ import os
 import re
 from backend.agent_orchestrator import AgentOrchestrator
 from backend.calculations.ror_engine import RORState
-from backend.apis.cited_data_point import CitedDataPoint
 
 def local_css(file_name):
     try:
@@ -136,6 +135,8 @@ with st.sidebar:
     
     st.divider()
     st.markdown("### 🛠️ GOVERNANCE CONTROLS")
+    st.session_state.sector = st.selectbox("Sector Profile", ["Financial Services", "Retail/FMCG", "Mining", "Public Sector"], index=0)
+    
     if st.button("🔄 Reset Doctoral Cycle", use_container_width=True):
         st.session_state.stage = 1
         st.session_state.messages = []
@@ -151,38 +152,10 @@ with st.sidebar:
 col_left, col_right = st.columns([2.5, 1])
 
 with col_left:
-    # Display Sensing Brief with Citations if it exists
-    if st.session_state.env_brief:
-        if "cited_points" in st.session_state.env_brief:
+        # Display Sensing Brief if it exists
+        if st.session_state.env_brief:
             st.markdown("### 🌍 ENVIRONMENTAL BRIEF (Layer 1 Sensing)")
-            st.markdown("*All figures are source-attributed. Click a source to verify.*")
-            
-            # Since objects might be serialized in session_state, we reconstruct if needed
-            points = st.session_state.env_brief["cited_points"]
-            for pt in points:
-                # pt is likely a dict if it came from the API, we need object properties
-                label = pt.get("label") if isinstance(pt, dict) else pt.label
-                val = pt.get("value") if isinstance(pt, dict) else pt.value
-                
-                # We need the Citation object to use format_inline()
-                from backend.apis.citation_registry import CITATION_REGISTRY, CitationTier
-                cite_key = pt.get("citation_key") if isinstance(pt, dict) else pt.citation_key
-                cite = CITATION_REGISTRY.get(cite_key, CITATION_REGISTRY["AISRF_PROPOSAL"])
-                
-                tier_icon = {CitationTier.PRIMARY: "🟢", CitationTier.SECONDARY: "🟡", CitationTier.MODELLED: "🔵"}.get(cite.tier, "⚪")
-                
-                with st.expander(f"{tier_icon} **{label}:** {val} — ({cite.source_name}, {cite.publication_date})"):
-                    st.markdown(f"**Strategic Implication:**\n{pt.get('interpretation') if isinstance(pt, dict) else pt.interpretation}")
-                    st.markdown("---")
-                    st.markdown("**Source Details:**")
-                    st.code(cite.format_hover(), language=None)
-                    if cite.url and cite.url.startswith("http"):
-                        st.markdown(f"[🔗 Verify Source]({cite.url})")
-            
-            if st.session_state.env_brief.get("references_block"):
-                with st.expander("📚 Full References (APA 7th Edition)"):
-                    st.markdown(st.session_state.env_brief["references_block"])
-            
+            st.markdown(format_json_as_markdown(st.session_state.env_brief))
             st.divider()
 
     chat_container = st.container(height=500)

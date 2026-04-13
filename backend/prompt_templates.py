@@ -28,6 +28,8 @@ Consequence of deploying AI trained on formal-economy data in informal contexts 
 
 ### Decision Alpha (αD)
 Measurable improvement in decision quality via RAG and adversarial review relative to unaided human decisions.
+"""
+
 TRACKER_CITATION_INSTRUCTION = """
 ### CITATION RULES — MANDATORY FOR ALL TRACKER OUTPUTS:
 1. CITE EVERY FIGURE INLINE: Format [Value] ([Source Name], [Date]). Example: "ZAR/USD at R18.92 (SARB, 2024, live)".
