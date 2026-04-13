@@ -196,12 +196,19 @@
 
         @media(max-width:768px){
             .layout{grid-template-columns:1fr;}
-            .side{position:fixed;top:0;right:-100%;height:100vh;width:280px;z-index:950;box-shadow:-5px 0 20px rgba(0,0,0,0.5);transition:right 0.3s ease-in-out;padding-top:20px;}
+            .side{position:fixed;top:0;right:-100%;height:100vh;width:300px;z-index:950;box-shadow:-10px 0 30px rgba(0,0,0,0.6);transition:right 0.4s cubic-bezier(0.16, 1, 0.3, 1);padding-top:20px;backdrop-filter:blur(10px);background:rgba(21, 29, 43, 0.95);}
             .side.active{right:0;}
             .nav-toggle{display:block;}
-            .onboard-card{padding:32px 20px;}
-            .onboard-headline{font-size:1.3rem;}
+            .onboard-overlay{align-items:flex-end;}
+            .onboard-card{width:100%;max-width:none;border-radius:24px 24px 0 0;padding:40px 24px 60px;transform:translateY(100%);transition:transform 0.5s ease-out;}
+            .onboard-overlay:not(.hidden) .onboard-card{transform:translateY(0);}
+            .onboard-headline{font-size:1.45rem;text-align:left;}
+            .hdr-brand-full{display:none;}
+            .hdr-brand-mob{display:inline;}
+            .hdr-sub{display:none;}
+            .field-input{font-size:1rem;padding:14px;}
         }
+        .hdr-brand-mob{display:none;}
     </style>
 </head>
 <body>
@@ -287,8 +294,11 @@
     <div class="hdr">
         <div class="hdr-left">
             <div>
-                <div class="header-title">AI - Strategic Resilience Framework</div>
-                <div class="hdr-sub" id="hdrExec">Strategic Resilience Framework</div>
+                <div class="hdr-brand">
+                    <span class="hdr-brand-full">AI · <span>Strategic Resilience Framework</span></span>
+                    <span class="hdr-brand-mob">AI · <span>SRF</span></span>
+                </div>
+                <div class="hdr-sub" id="hdrExec">Governance Instrument</div>
             </div>
         </div>
         <div class="pills">
@@ -319,6 +329,7 @@
 
         <!-- Sidebar -->
         <div class="side">
+            <div style="width:40px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 10px;display:none;" class="nav-toggle"></div>
             <div>
                 <div class="side-h">Governance Pipeline</div>
                 <div style="margin-top:8px;" id="agentList"></div>
@@ -365,6 +376,18 @@ function toggleNav(force) {
     side.classList.toggle('active', next);
     overlay.classList.toggle('active', next);
 }
+
+// Seamless Physical Layer: Touch Swipes
+let touchStartX = 0;
+document.addEventListener('touchstart', e => { touchStartX = e.changedTouches[0].screenX; }, {passive: true});
+document.addEventListener('touchend', e => {
+    const touchEndX = e.changedTouches[0].screenX;
+    const diff = touchStartX - touchEndX;
+    if (Math.abs(diff) > 100) {
+        if (diff > 0) toggleNav(true); // Left -> Open
+        else toggleNav(false); // Right -> Close
+    }
+}, {passive: true});
 
 // Agent archetypes from PRD
 const STAGES = [
