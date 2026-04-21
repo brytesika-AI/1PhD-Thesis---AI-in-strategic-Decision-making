@@ -1,12 +1,20 @@
+"""
+AI-SRF Regulatory Document Indexer — Worker Proxy Architecture
+Source: AI-SRF Proposal, Sikazwe (2026)
+
+Pushes document chunks to the Cloudflare Worker, which performs:
+  1. Embedding via Workers AI (@cf/baai/bge-small-en-v1.5)
+  2. Vectorize upsert via binding
+  3. KV storage via binding
+
+This eliminates the need for Vectorize API tokens.
+"""
 import os
 import httpx
 from pypdf import PdfReader
 
 # ── Config ───────────────────────────────────────────────────
-CF_ACCOUNT_ID = "244693f2079c982e757ff6ec7dbd8f96"
-CF_API_TOKEN  = os.environ.get("CF_API_TOKEN", "cfut_ePJUS64PcjuceBWPx6M5jTzhLWcjkbn1jp7R2wev72c6f0fb")
-VECTORIZE_INDEX = "aisrf-phd-index"
-KV_NAMESPACE_ID = "5aa1df4235b64bc2b0fabb9c512ad05d"
+WORKER_URL = os.environ.get("WORKER_URL", "https://ai-srf-worker.bryte-sika.workers.dev")
 
 REG_DOCS = [
     r"c:\Users\bright.sikazwe\Downloads\1PhD Thesis - AI in strategic Decision making\docs\regulations\king_iv.md",
@@ -17,13 +25,7 @@ REG_DOCS = [
 
 CHUNK_SIZE = 400
 CHUNK_OVERLAP = 50
-BATCH_SIZE = 100 
-
-BASE_URL = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}"
-HEADERS  = {
-    "Authorization": f"Bearer {CF_API_TOKEN}",
-    "Content-Type": "application/json"
-}
+BATCH_SIZE = 10  # Smaller batches for Worker proxy (avoids timeout)
 
 # ── Extraction ───────────────────────────────────────────────
 def get_content(path: str) -> str:
@@ -50,64 +52,58 @@ def chunk_text(text: str, source_name: str) -> list[dict]:
         chunk_text = " ".join(chunk_words)
         chunks.append({
             "id": f"reg_{chunk_id_base}_{c_num}",
-            "text": f"[Source: {source_name}] {chunk_text}"
+            "text": f"[Source: {source_name}] {chunk_text}",
+            "source": source_name
         })
         c_num += 1
         i += CHUNK_SIZE - CHUNK_OVERLAP
     return chunks
 
-# ── Cloudflare APIs ──────────────────────────────────────────
-def embed_texts(texts: list[str]) -> list[list[float]]:
-    url = f"{BASE_URL}/ai/run/@cf/baai/bge-small-en-v1.5"
-    response = httpx.post(url, headers=HEADERS, json={"text": texts}, timeout=120)
-    response.raise_for_status()
-    return response.json()["result"]["data"]
-
-def upsert_vectors(vectors: list[dict]):
-    url = f"{BASE_URL}/vectorize/v2/indexes/{VECTORIZE_INDEX}/upsert"
-    for i in range(0, len(vectors), BATCH_SIZE):
-        batch = vectors[i:i + BATCH_SIZE]
-        response = httpx.post(url, headers=HEADERS, json={"vectors": batch}, timeout=120)
+# ── Worker Proxy Ingestion ────────────────────────────────────
+def ingest_via_worker(chunks: list[dict]):
+    """Push chunks to the Worker's /api/ingest/chunks endpoint."""
+    url = f"{WORKER_URL}/api/ingest/chunks"
+    for i in range(0, len(chunks), BATCH_SIZE):
+        batch = chunks[i:i + BATCH_SIZE]
+        response = httpx.post(
+            url,
+            json={"chunks": batch},
+            timeout=120
+        )
         response.raise_for_status()
-        print(f"Upserted {len(batch)} vectors")
-
-def store_kv(chunks: list[dict]):
-    url = f"{BASE_URL}/storage/kv/namespaces/{KV_NAMESPACE_ID}/bulk"
-    kv_pairs = [{"key": c["id"], "value": c["text"]} for c in chunks]
-    for i in range(0, len(kv_pairs), 100):
-        batch = kv_pairs[i:i + 100]
-        httpx.put(url, headers=HEADERS, json=batch, timeout=120).raise_for_status()
-        print(f"Stored {len(batch)} items in KV")
+        result = response.json()
+        print(f"  Batch {i//BATCH_SIZE + 1}: Indexed {result.get('indexed', 0)} chunks, {result.get('vectors', 0)} vectors")
 
 # ── Main ────────────────────────────────────────────────────
 def main():
+    print("=" * 60)
+    print("AI-SRF Regulatory Document Indexer (Worker Proxy)")
+    print("=" * 60)
+    
     for doc_path in REG_DOCS:
         if not os.path.exists(doc_path):
-            print(f"Skipping missing file: {doc_path}")
+            print(f"[SKIP] Skipping missing file: {doc_path}")
             continue
             
         source_name = os.path.basename(doc_path)
-        print(f"Processing {source_name}...")
+        print(f"\n[DOC] Processing {source_name}...")
         text = get_content(doc_path)
-        if not text: continue
+        if not text:
+            print(f"  [WARN] Empty content, skipping.")
+            continue
         
         chunks = chunk_text(text, source_name)
-        print(f"Created {len(chunks)} chunks.")
+        print(f"  [CHUNK] Created {len(chunks)} chunks.")
         
-        all_texts = [c["text"] for c in chunks]
-        all_embeddings = []
-        for i in range(0, len(all_texts), 25):
-            batch = all_texts[i:i + 25]
-            all_embeddings.extend(embed_texts(batch))
-            print(f"Progress: {min(i + 25, len(all_texts))} / {len(all_texts)}")
-        
-        vectors = [
-            {"id": chunks[j]["id"], "values": all_embeddings[j], "metadata": {"source": source_name}}
-            for j in range(len(chunks))
-        ]
-        upsert_vectors(vectors)
-        store_kv(chunks)
-        print(f"Successfully indexed {source_name}")
+        try:
+            ingest_via_worker(chunks)
+            print(f"  [OK] Successfully indexed {source_name}")
+        except Exception as e:
+            print(f"  [FAIL] Indexing failed for {source_name}: {e}")
+
+    print("\n" + "=" * 60)
+    print("Indexing complete.")
+    print("=" * 60)
 
 if __name__ == "__main__":
     main()

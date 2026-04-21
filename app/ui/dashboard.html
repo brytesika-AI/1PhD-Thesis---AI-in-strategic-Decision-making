@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-SRF · Strategic Resilience Framework</title>
+    <meta name="description" content="AI-driven Strategic Resilience Framework — structured executive decision-making partner for South African corporate digitalisation governance.">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Source+Serif+4:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;}
+        :root{
+            --kalahari:#8B2500; --kalahari-glow:rgba(139,37,0,0.12);
+            --baobab:#C27B2B; --baobab-glow:rgba(194,123,43,0.10);
+            --gold:#D4A017; --gold-glow:rgba(212,160,23,0.10);
+            --ochre:#B8860B;
+            --ubuntu:#2D6A4F; --ubuntu-glow:rgba(45,106,79,0.10);
+            --cape:#1B4F72;
+            --charcoal:#1A1A1A; --slate:#0D1117; --slate2:#151D2B; --slate3:#1E2A3E;
+            --ivory:#F5F0E8; --ivory2:#D5CFC4; --ivory3:#A09A8E;
+            --border:#2A3548; --border2:#374258;
+            --red:#C0392B; --purple:#7D3C98;
+            --radius:10px;
+        }
+        body{font-family:'Source Serif 4','Georgia',serif;background:var(--slate);color:var(--ivory);min-height:100vh;}
+
+        /* African Geometric Pattern */
+        .geo-pattern{height:4px;background:repeating-linear-gradient(90deg,var(--kalahari) 0,var(--kalahari) 8px,transparent 8px,transparent 12px,var(--baobab) 12px,var(--baobab) 20px,transparent 20px,transparent 24px,var(--ubuntu) 24px,var(--ubuntu) 32px,transparent 32px,transparent 36px,var(--gold) 36px,var(--gold) 44px,transparent 44px,transparent 48px);}
+
+        /* ============= ONBOARDING OVERLAY ============= */
+        .onboard-overlay{position:fixed;inset:0;background:var(--slate);z-index:1000;display:flex;align-items:center;justify-content:center;transition:opacity 0.6s,transform 0.6s;}
+        .onboard-overlay.hidden{opacity:0;pointer-events:none;transform:scale(1.02);}
+        .onboard-card{max-width:580px;width:90%;text-align:center;padding:48px 40px;}
+        .onboard-icon{font-size:3.5rem;margin-bottom:16px;}
+        .onboard-headline{font-family:'DM Serif Display',serif;font-size:1.7rem;line-height:1.35;color:var(--ivory);margin-bottom:12px;}
+        .onboard-headline span{color:var(--baobab);}
+        .onboard-sub{font-size:0.88rem;color:var(--ivory3);line-height:1.6;margin-bottom:32px;}
+        .onboard-form{text-align:left;}
+        .field-group{margin-bottom:16px;}
+        .field-label{font-family:'Inter',sans-serif;font-size:0.65rem;font-weight:700;color:var(--ivory3);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;}
+        .field-input{width:100%;background:var(--slate2);border:1px solid var(--border);border-radius:8px;padding:11px 14px;color:var(--ivory);font-family:'Source Serif 4',serif;font-size:0.9rem;outline:none;transition:border-color 0.2s;}
+        .field-input:focus{border-color:var(--baobab);}
+        .field-input::placeholder{color:var(--ivory3);}
+        .field-select{appearance:none;background:var(--slate2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M6 8L1 3h10z' fill='%23A09A8E'/%3E%3C/svg%3E") no-repeat right 12px center;width:100%;border:1px solid var(--border);border-radius:8px;padding:11px 14px;color:var(--ivory);font-family:'Source Serif 4',serif;font-size:0.9rem;outline:none;cursor:pointer;}
+        .field-textarea{min-height:80px;resize:vertical;}
+        .onboard-cta{width:100%;background:var(--kalahari);color:white;border:none;padding:14px;border-radius:8px;font-family:'DM Serif Display',serif;font-size:1rem;cursor:pointer;transition:all 0.25s;margin-top:8px;letter-spacing:0.5px;}
+        .onboard-cta:hover{background:#A03000;transform:translateY(-1px);}
+        .onboard-footer{margin-top:24px;font-family:'Inter',sans-serif;font-size:0.55rem;color:var(--ivory3);text-transform:uppercase;letter-spacing:1.5px;}
+
+        /* ============= MAIN APP ============= */
+        .app{display:none;flex-direction:column;height:100vh;}
+        .app.active{display:flex;}
+
+        /* Header */
+        .hdr{padding:12px 24px;display:flex;align-items:center;justify-content:space-between;background:var(--slate2);border-bottom:1px solid var(--border);}
+        .hdr-left{display:flex;align-items:center;gap:14px;}
+        .hdr-brand{font-family:'DM Serif Display',serif;font-size:1.2rem;color:var(--ivory);letter-spacing:1px;}
+        .hdr-brand span{color:var(--baobab);font-style:italic;}
+        .hdr-sub{font-family:'Inter',sans-serif;font-size:0.55rem;color:var(--ivory3);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;}
+        .pills{display:flex;gap:5px;}
+        .pill{padding:3px 10px;border-radius:4px;font-family:'Inter',sans-serif;font-size:0.55rem;font-weight:800;text-transform:uppercase;}
+        .pill-k{background:var(--kalahari);color:white;} .pill-g{border:1px solid var(--gold);color:var(--gold);} .pill-u{background:var(--ubuntu);color:white;}
+
+        /* Stage Progress */
+        .stage-bar{padding:8px 24px;background:var(--charcoal);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:4px;overflow-x:auto;}
+        .stg{display:flex;align-items:center;gap:4px;padding:4px 10px;border-radius:14px;font-family:'Inter',sans-serif;font-size:0.58rem;font-weight:700;color:var(--ivory3);white-space:nowrap;transition:all 0.3s;}
+        .stg.active{color:var(--baobab);border:1px solid var(--baobab);background:var(--baobab-glow);}
+        .stg.done{color:var(--ubuntu);border:1px solid var(--ubuntu);background:var(--ubuntu-glow);}
+        .stg-line{width:12px;height:1px;background:var(--border);flex-shrink:0;}
+
+        /* Layout */
+        .layout{display:grid;grid-template-columns:1fr 280px;flex:1;overflow:hidden;}
+
+        /* Chat Panel */
+        .chat{display:flex;flex-direction:column;overflow:hidden;}
+        .chat-scroll{flex:1;overflow-y:auto;padding:16px 24px;}
+        .chat-bottom{padding:10px 24px 14px;border-top:1px solid var(--border);background:var(--slate2);}
+
+        /* Messages */
+        .msg{margin-bottom:14px;animation:fadeIn 0.35s ease-out both;}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+
+        /* Environmental briefing */
+        .msg-env{background:linear-gradient(135deg,var(--ubuntu-glow),var(--baobab-glow));border:1px solid var(--ubuntu);border-radius:var(--radius);padding:16px 18px;border-left:4px solid var(--ubuntu);}
+        .msg-env .lbl{color:var(--ubuntu);}
+
+        /* User message */
+        .msg-user{display:flex;justify-content:flex-end;}
+        .msg-user-b{background:var(--slate3);border:1px solid var(--border2);border-radius:var(--radius) var(--radius) 4px var(--radius);padding:12px 16px;max-width:72%;}
+        .msg-user-b .lbl{color:var(--ivory3);}
+
+        /* Agent message */
+        .msg-agent{display:flex;gap:10px;}
+        .msg-av{width:38px;height:38px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.15rem;flex-shrink:0;margin-top:3px;}
+        .msg-body{background:var(--slate2);border:1px solid var(--border);border-radius:4px var(--radius) var(--radius) var(--radius);padding:14px 16px;flex:1;min-width:0;}
+
+        /* Labels */
+        .lbl{font-family:'Inter',sans-serif;font-size:0.58rem;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;display:flex;align-items:center;gap:6px;}
+        .lbl-sub{font-weight:500;color:var(--ivory3);font-style:italic;text-transform:none;letter-spacing:0;}
+        .badge{font-size:0.48rem;padding:2px 7px;border-radius:3px;color:white;font-weight:700;}
+        .txt{font-size:0.88rem;line-height:1.72;color:var(--ivory2);white-space:pre-wrap;word-break:break-word;}
+
+        /* Verdict badges */
+        .v-badge{display:inline-block;padding:4px 12px;border-radius:4px;font-family:'Inter',sans-serif;font-size:0.62rem;font-weight:900;text-transform:uppercase;margin-top:8px;}
+        .v-proceed{background:var(--ubuntu);color:white;}
+        .v-modify{background:var(--gold);color:#1a1a1a;}
+        .v-defer{background:var(--red);color:white;}
+        .v-escalate{background:var(--purple);color:white;}
+
+        /* Tool card */
+        .tool-c{margin-top:8px;border-left:2px dashed var(--baobab);padding:5px 10px;background:var(--baobab-glow);border-radius:0 6px 6px 0;font-family:'Inter',sans-serif;font-size:0.7rem;color:var(--ivory3);}
+
+        /* Typing */
+        .typing{display:flex;align-items:center;gap:8px;padding:8px 0;color:var(--ivory3);font-size:0.78rem;}
+        .dots span{display:inline-block;width:5px;height:5px;background:var(--baobab);border-radius:50%;animation:blink 1.4s infinite ease-in-out both;margin-right:2px;}
+        .dots span:nth-child(1){animation-delay:-0.32s;}.dots span:nth-child(2){animation-delay:-0.16s;}
+        @keyframes blink{0%,80%,100%{transform:scale(0);}40%{transform:scale(1);}}
+
+        /* Input */
+        .input-row{display:flex;gap:8px;}
+        .inp{flex:1;background:var(--charcoal);border:1px solid var(--border);border-radius:8px;padding:11px 14px;color:var(--ivory);font-family:'Source Serif 4',serif;font-size:0.88rem;outline:none;transition:border-color 0.2s;resize:none;min-height:42px;max-height:100px;}
+        .inp:focus{border-color:var(--baobab);}
+        .inp::placeholder{color:var(--ivory3);}
+        .send{background:var(--kalahari);color:white;border:none;padding:11px 18px;border-radius:8px;font-family:'DM Serif Display',serif;font-size:0.82rem;cursor:pointer;transition:all 0.2s;white-space:nowrap;}
+        .send:hover{background:#A03000;transform:translateY(-1px);}
+        .send:disabled{opacity:0.35;cursor:not-allowed;transform:none;}
+        .hint{font-family:'Inter',sans-serif;font-size:0.62rem;color:var(--ivory3);margin-top:5px;font-weight:500;}
+
+        /* Sidebar */
+        .side{background:var(--slate2);border-left:1px solid var(--border);padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:16px;}
+        .side-h{font-family:'Inter',sans-serif;font-size:0.55rem;font-weight:800;color:var(--ivory3);text-transform:uppercase;letter-spacing:1.5px;}
+
+        /* Agent list */
+        .ag{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;border:1px solid transparent;transition:all 0.3s;margin-bottom:2px;}
+        .ag.active{border-color:var(--baobab);background:var(--baobab-glow);}
+        .ag.done{border-color:var(--ubuntu);background:var(--ubuntu-glow);}
+        .ag-dot{width:7px;height:7px;border-radius:50%;background:var(--ivory3);transition:all 0.3s;flex-shrink:0;}
+        .ag-dot.active{background:var(--baobab);box-shadow:0 0 6px var(--baobab);}
+        .ag-dot.done{background:var(--ubuntu);}
+        .ag-n{font-family:'Inter',sans-serif;font-size:0.68rem;font-weight:700;}
+        .ag-s{font-family:'Inter',sans-serif;font-size:0.5rem;font-weight:600;color:var(--ivory3);text-transform:uppercase;}
+
+        /* Metrics */
+        .metrics{display:grid;grid-template-columns:1fr 1fr;gap:5px;}
+        .met{background:var(--charcoal);border:1px solid var(--border);border-radius:6px;padding:8px;text-align:center;}
+        .met-v{font-family:'DM Serif Display',serif;font-size:1.1rem;color:var(--baobab);}
+        .met-l{font-family:'Inter',sans-serif;font-size:0.45rem;font-weight:700;color:var(--ivory3);text-transform:uppercase;letter-spacing:0.3px;margin-top:1px;}
+
+        /* Reset */
+        .rst{background:transparent;border:1px solid var(--border);color:var(--ivory3);padding:7px;border-radius:6px;font-family:'Inter',sans-serif;font-size:0.6rem;font-weight:700;cursor:pointer;transition:all 0.2s;text-transform:uppercase;width:100%;}
+        .rst:hover{border-color:var(--kalahari);color:var(--kalahari);}
+
+        .footer{text-align:center;font-family:'Inter',sans-serif;font-size:0.5rem;color:var(--ivory3);font-weight:800;text-transform:uppercase;letter-spacing:1.5px;padding:6px;}
+
+        /* POPIA Notice */
+        .popia-notice{background:rgba(139,37,0,0.08);border-left:3px solid var(--kalahari);padding:10px 14px;border-radius:0 6px 6px 0;margin-bottom:20px;font-family:'Inter',sans-serif;font-size:0.68rem;color:var(--ivory3);line-height:1.5;}
+        .popia-notice strong{color:var(--ivory);}
+        .opt-hint{font-weight:400;color:var(--ivory3);font-style:italic;text-transform:none;letter-spacing:0;}
+
+        /* Rating Overlay */
+        .rating-overlay{position:fixed;inset:0;background:var(--slate);z-index:1001;display:flex;align-items:center;justify-content:center;transition:opacity 0.6s;}
+        .rating-overlay.hidden{opacity:0;pointer-events:none;}
+        .rating-card{max-width:480px;width:90%;background:var(--slate2);border:1px solid var(--border);border-radius:12px;padding:40px;text-align:center;}
+        .star-row{display:flex;justify-content:center;gap:8px;margin-bottom:24px;}
+        .star-btn{background:none;border:none;font-size:2.2rem;cursor:pointer;color:var(--border);transition:color 0.15s,transform 0.15s;}
+        .star-btn:hover{transform:scale(1.15);}
+        .star-btn.lit{color:var(--gold);}
+        .rating-textarea{width:100%;background:var(--charcoal);border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--ivory);font-family:'Source Serif 4',serif;font-size:0.88rem;resize:vertical;min-height:80px;margin-bottom:16px;outline:none;}
+
+        /* Quick Select Grid */
+        .quick-select-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px;}
+        .qs-group{display:flex;flex-direction:column;gap:5px;}
+        .qs-title{font-size:0.55rem;font-weight:800;color:var(--ivory3);text-transform:uppercase;margin-bottom:3px;}
+        .qs-chip{background:var(--slate3);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:0.68rem;color:var(--ivory2);cursor:pointer;transition:all 0.2s;text-align:center;line-height:1.2;}
+        .qs-chip:hover{border-color:var(--baobab);color:var(--baobab);background:var(--baobab-glow);}
+        .qs-chip.active{border-color:var(--baobab);background:var(--baobab-glow);color:var(--baobab);}
+
+        /* Control UI */
+        .ctrl-area{padding:12px 0;}
+        .gate-msg{background:var(--baobab-glow);border:1px solid var(--baobab);padding:10px;border-radius:6px;font-size:0.75rem;color:var(--ivory);margin-bottom:10px;line-height:1.4;}
+        .choice-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;}
+        .choice-btn{background:var(--slate3);border:1px solid var(--border);color:var(--ivory2);padding:10px;border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;transition:all 0.2s;text-align:center;}
+        .choice-btn:hover, .choice-btn.active{border-color:var(--baobab);color:var(--baobab);background:var(--baobab-glow);}
+        .action-row{display:flex;gap:8px;align-items:center;}
+        .tab-row{display:flex;gap:1px;background:var(--border);border-radius:6px;overflow:hidden;margin-bottom:10px;}
+        .tab-btn{flex:1;background:var(--slate3);border:none;padding:8px;font-size:0.68rem;font-weight:700;color:var(--ivory3);cursor:pointer;transition:all 0.2s;}
+        .tab-btn.active{background:var(--baobab);color:white;}
+
+        @media(max-width:768px){
+            .layout{grid-template-columns:1fr;}
+            .side{position:fixed;top:0;right:-100%;height:100vh;width:300px;z-index:950;box-shadow:-10px 0 30px rgba(0,0,0,0.6);transition:right 0.4s cubic-bezier(0.16, 1, 0.3, 1);}
+            .side.active{right:0;}
+            .quick-select-grid{grid-template-columns:1fr;}
+        }
+    </style>
+</head>
+<body>
+
+<div class="onboard-overlay" id="onboarding">
+    <div class="onboard-card">
+        <h1 class="onboard-headline">AI-SRF · <span>Sovereign Governance</span></h1>
+        <p class="onboard-sub">A structured executive decision-making partner for the South African corporate reality.</p>
+        <form class="onboard-form" onsubmit="beginSession(event)">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div class="field-group">
+                    <div class="field-label">Executive Name</div>
+                    <input class="field-input" id="execName" placeholder="e.g. Thandi Nkosi" />
+                </div>
+                <div class="field-group">
+                    <div class="field-label">Organisation</div>
+                    <input class="field-input" id="execOrg" placeholder="e.g. FirstRand Ltd" />
+                </div>
+            </div>
+            <div class="field-group">
+                <div class="field-label">Sector</div>
+                <select class="field-select field-input" id="execSector">
+                    <option value="financial_services">Financial Services</option>
+                    <option value="mining">Mining</option>
+                    <option value="retail">Retail</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <div class="field-group">
+                <div class="field-label">Primary Challenge</div>
+                <textarea class="field-input field-textarea" id="execChallenge" placeholder="Or describe your strategic decision here..."></textarea>
+            </div>
+            <div class="field-label">Quick-Select Strategic Challenge</div>
+            <div class="quick-select-grid">
+                <div class="qs-group">
+                    <div class="qs-title">Finance</div>
+                    <div class="qs-chip" onclick="selectTemplate('finance', 0)">FX Exposure</div>
+                    <div class="qs-chip" onclick="selectTemplate('finance', 1)">Capital Reset</div>
+                </div>
+                <div class="qs-group">
+                    <div class="qs-title">Logistics</div>
+                    <div class="qs-chip" onclick="selectTemplate('logistics', 0)">Grid Resilience</div>
+                </div>
+                <div class="qs-group">
+                    <div class="qs-title">Governance</div>
+                    <div class="qs-chip" onclick="selectTemplate('governance', 0)">King IV Oversight</div>
+                </div>
+            </div>
+            <button type="submit" class="onboard-cta">Begin Strategic Session →</button>
+        </form>
+    </div>
+</div>
+
+<div class="rating-overlay hidden" id="ratingOverlay">
+    <div class="rating-card">
+        <div id="ratingForm">
+            <h2 class="rating-title">Session Complete</h2>
+            <div class="star-row" id="starRow"></div>
+            <textarea class="rating-textarea" id="ratingFeedback" placeholder="Feedback..."></textarea>
+            <button class="onboard-cta" id="ratingSubmitBtn" onclick="submitRating()">Submit</button>
+        </div>
+        <div id="ratingThanks" style="display:none;">
+            <h3>Siyabonga!</h3>
+            <button class="rst" onclick="closeRating()">Return to Dashboard</button>
+        </div>
+    </div>
+</div>
+
+<div class="app" id="mainApp">
+    <div class="hdr">
+        <div class="hdr-brand">AI-SRF · <span id="hdrExec">Governance Instrument</span></div>
+        <div class="pills"><span class="pill pill-k">● ELEVATED</span></div>
+    </div>
+    <div class="stage-bar" id="stageBar"></div>
+    <div class="layout">
+        <div class="chat">
+            <div class="chat-scroll" id="chatScroll"></div>
+            <div class="chat-bottom" id="chatControls"></div>
+        </div>
+        <div class="side">
+            <div class="side-h">Governance Pipeline</div>
+            <div id="agentList"></div>
+            <div class="side-h">Return on Resilience</div>
+            <div class="metrics">
+                <div class="met"><div class="met-v" id="mIAR">—</div><div class="met-l">Autonomy</div></div>
+                <div class="met"><div class="met-v" id="mDA">—</div><div class="met-l">Alpha</div></div>
+            </div>
+            <button class="rst" onclick="resetCycle()">↻ Reset Cycle</button>
+        </div>
+    </div>
+    <div class="footer">AI-SRF v6.0 · By Bright Sikazwe, PhD Candidate</div>
+</div>
+
+<script>
+const API = window.location.origin;
+const STAGES = [
+    { id:0, label:"Sourcing", archetype:"The Tracker", icon:"🌍", color:"#2D6A4F" },
+    { id:1, label:"Diagnostic", archetype:"The Induna", icon:"🤔", color:"#C27B2B" },
+    { id:2, label:"Forensic", archetype:"The Auditor", icon:"⚖️", color:"#8B2500" },
+    { id:3, label:"Options", archetype:"The Innovator", icon:"💡", color:"#1B4F72" },
+    { id:4, label:"Stress Test", archetype:"The Challenger", icon:"🛡️", color:"#C0392B" },
+    { id:5, label:"Execution", archetype:"The Architect", icon:"🏗️", color:"#7D3C98" },
+    { id:6, label:"Monitoring", archetype:"The Guardian", icon:"📡", color:"#2D6A4F" }
+];
+
+const STAGE_GATES = {
+    0: { type: 'input', label: 'Begin Strategic Session →', placeholder: 'Strategic decision...' },
+    1: { type: 'input', label: 'Submit Answers →', placeholder: 'Diagnostic answers...' },
+    2: { type: 'confirm', label: 'Proceed to Strategic Options →', msg: 'Analysis complete.' },
+    3: { type: 'choice', label: 'Confirm Choice →', choices: ['Option 1', 'Option 2', 'Option 3'], placeholder: 'Choice context...' },
+    4: { type: 'tabbed', label_confirm: 'Accept & Proceed →', label_input: 'Respond →', placeholder: 'Response...' },
+    5: { type: 'confirm', label: 'Proceed to Monitoring →', msg: 'Implementation scaffold complete.' },
+    6: { type: 'end', label: 'Download Report', label2: 'New Session', msg: 'Cycle complete.' }
+};
+
+let session = { execName:'', org:'', sector:'', stage:1, messages:[], isProcessing:false };
+
+function beginSession(e) {
+    e.preventDefault();
+    session.execName = document.getElementById('execName').value;
+    session.sector = document.getElementById('execSector').value;
+    document.getElementById('onboarding').classList.add('hidden');
+    document.getElementById('mainApp').classList.add('active');
+    renderStageBar(); renderAgentList(); renderStageGate(0);
+}
+
+function renderStageBar() {
+    const bar = document.getElementById('stageBar');
+    bar.innerHTML = STAGES.map(s => `<div class="stg ${s.id < session.stage ? 'done' : (s.id === session.stage ? 'active' : '')}">${s.icon} ${s.label}</div>`).join(' → ');
+}
+
+function renderAgentList() {
+    document.getElementById('agentList').innerHTML = STAGES.map(s => `<div class="ag ${s.id === session.stage ? 'active' : ''}">${s.icon} ${s.archetype}</div>`).join('');
+}
+
+function renderStageGate(stage) {
+    const area = document.getElementById('chatControls');
+    const gate = STAGE_GATES[stage];
+    if (!gate) return;
+    let html = `<div class="ctrl-area">`;
+    if (gate.msg) html += `<div class="gate-msg">${gate.msg}</div>`;
+    if (gate.type === 'input') {
+        html += `<textarea class="inp" id="userInput" placeholder="${gate.placeholder}"></textarea><button class="send" onclick="sendMessage()">Send</button>`;
+    } else if (gate.type === 'confirm') {
+        html += `<button class="send" style="width:100%" onclick="sendMessage('[CONFIRM]')">${gate.label}</button>`;
+    } else if (gate.type === 'choice') {
+        html += `<div class="choice-grid">${gate.choices.map(c => `<button class="choice-btn" onclick="sendMessage('${c}')">${c}</button>`).join('')}</div>`;
+    } else if (gate.type === 'end') {
+        html += `<button class="send" onclick="showRating()">${gate.label}</button>`;
+    }
+    area.innerHTML = html;
+}
+
+async function sendMessage(overrideText) {
+    const text = overrideText || document.getElementById('userInput').value;
+    if (!text || session.isProcessing) return;
+    session.isProcessing = true;
+    addMsgToDOM('user', text);
+    session.messages.push({ role:'user', content:text });
+    
+    try {
+        const res = await fetch(`${API}/api/conversation/guided`, {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({ messages: session.messages, stage: session.stage })
+        });
+        const reader = res.body.getReader();
+        let full = '';
+        while (true) {
+            const {value, done} = await reader.read();
+            if (done) break;
+            const chunk = new TextDecoder().decode(value);
+            const lines = chunk.split('\n');
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const data = JSON.parse(line.slice(6));
+                    if (data.type === 'delta') full += data.text;
+                    if (data.type === 'done') {
+                        session.messages.push({ role:'assistant', content:full });
+                        session.stage++;
+                        addMsgToDOM('agent', full);
+                        renderStageBar(); renderStageGate(session.stage);
+                    }
+                }
+            }
+        }
+    } catch(e) {}
+    session.isProcessing = false;
+}
+
+function addMsgToDOM(role, text) {
+    const scroll = document.getElementById('chatScroll');
+    const div = document.createElement('div');
+    div.className = 'msg';
+    div.innerHTML = `<strong>${role}:</strong> ${text}`;
+    scroll.appendChild(div);
+}
+
+const TEMPLATE_MSGS = {
+    finance: ["FX Risk exposure...", "Capital allocation..."],
+    logistics: ["Grid resilience..."],
+    governance: ["King IV audit..."]
+};
+function selectTemplate(group, idx) {
+    document.getElementById('execChallenge').value = TEMPLATE_MSGS[group][idx];
+}
+
+function resetCycle() { location.reload(); }
+function showRating() { document.getElementById('ratingOverlay').classList.remove('hidden'); }
+function submitRating() { document.getElementById('ratingForm').style.display='none'; document.getElementById('ratingThanks').style.display='block'; }
+function closeRating() { document.getElementById('ratingOverlay').classList.add('hidden'); }
+</script>
+</body>
+</html>

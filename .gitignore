@@ -7,6 +7,10 @@ env/
 venv/
 chroma_db/
 runs/
+workspace/audit_logs/
+workspace/cases/
+workspace/runs/
+workspace/test_runs/
 *.log
 .streamlit/
 ! .streamlit/config.toml

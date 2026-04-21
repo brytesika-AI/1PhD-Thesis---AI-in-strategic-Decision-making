@@ -24,3 +24,9 @@ class EnvironmentalSignal(BaseModel):
 
 class RiskStateRequest(BaseModel):
     signals: List[EnvironmentalSignal]
+
+
+class ApprovalDecisionRequest(BaseModel):
+    approved: bool
+    reviewer: str = "human_reviewer"
+    notes: str = ""

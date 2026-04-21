@@ -68,7 +68,20 @@
         .stg-line{width:12px;height:1px;background:var(--border);flex-shrink:0;}
 
         /* Layout */
-        .layout{display:grid;grid-template-columns:1fr 280px;flex:1;overflow:hidden;}
+        .layout{display:grid;grid-template-columns:1fr 380px 240px;flex:1;overflow:hidden;}
+
+        /* Strategic Panels */
+        .panels{background:var(--slate2);border-left:1px solid var(--border);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+        .panels-nav{display:flex;background:var(--charcoal);border-bottom:1px solid var(--border);padding:0 8px;}
+        .p-tab{padding:12px 14px;color:var(--ivory3);font-family:'Inter',sans-serif;font-size:0.6rem;font-weight:700;text-transform:uppercase;cursor:pointer;border-bottom:2px solid transparent;}
+        .p-tab.active{color:var(--baobab);border-bottom-color:var(--baobab);}
+        .panels-content{flex:1;overflow-y:auto;padding:16px;font-family:'Source Serif 4',serif;}
+        .p-card{background:var(--slate3);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px;}
+        .p-card h4{font-family:'DM Serif Display',serif;font-size:1.05rem;color:var(--ivory);margin-bottom:8px;color:var(--kalahari);}
+        .p-card p{font-size:0.85rem;color:var(--ivory2);line-height:1.5;margin-bottom:6px;}
+        .p-card ul{padding-left:18px;font-size:0.85rem;color:var(--ivory2);margin-bottom:6px;}
+        .p-card li{margin-bottom:4px;}
+
 
         /* Chat Panel */
         .chat{display:flex;flex-direction:column;overflow:hidden;}
@@ -327,6 +340,29 @@
             </div>
         </div>
 
+        <!-- Strategic Panels (New) -->
+        <div class="panels">
+            <div class="panels-nav">
+                <div class="p-tab active" onclick="switchTab(this, 'p-briefing')">Briefing</div>
+                <div class="p-tab" onclick="switchTab(this, 'p-evidence')">Evidence</div>
+                <div class="p-tab" onclick="switchTab(this, 'p-options')">Options</div>
+                <div class="p-tab" onclick="switchTab(this, 'p-stress')">Stress</div>
+                <div class="p-tab" onclick="switchTab(this, 'p-roadmap')">Roadmap</div>
+            </div>
+            <div class="panels-content" id="panelsContent">
+                <div id="p-briefing" style="display:block;">
+                    <div class="p-card">
+                        <h4>Awaiting Briefing</h4>
+                        <p>Environmental monitor has not yet captured JSON.</p>
+                    </div>
+                </div>
+                <div id="p-evidence" style="display:none;"></div>
+                <div id="p-options" style="display:none;"></div>
+                <div id="p-stress" style="display:none;"></div>
+                <div id="p-roadmap" style="display:none;"></div>
+            </div>
+        </div>
+
         <!-- Sidebar -->
         <div class="side">
             <div style="width:40px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 10px;display:none;" class="nav-toggle"></div>
@@ -350,6 +386,12 @@
                 </div>
             </div>
             <div>
+                <div class="side-h">Risk Intelligence Feed</div>
+                <div style="margin-top:4px; max-height: 150px; overflow-y: auto;" id="riskFeed">
+                    <div class="sig" style="color:var(--ivory3)">● Awaiting ingestion...</div>
+                </div>
+            </div>
+            <div>
                 <div class="side-h">Session</div>
                 <div class="metrics">
                     <div class="met"><div class="met-v" id="mStage">0/6</div><div class="met-l">Stage</div></div>
@@ -358,6 +400,18 @@
                 <button class="rst" style="margin-top:8px;" onclick="resetCycle()">↻ Reset Governance Cycle</button>
                 <button class="rst" style="margin-top:4px;background:var(--gold-glow);border-color:var(--gold);color:var(--gold);" onclick="showRating()">★ Rate This Session</button>
                 <div style="font-family:'Inter',sans-serif;font-size:0.55rem;font-weight:800;color:var(--kalahari);margin-top:6px;">The Challenger cannot be bypassed</div>
+            </div>
+            <div>
+                <div class="side-h">Strategic Portals</div>
+                <div style="display:grid; grid-template-columns: 1fr; gap:6px; margin-top:8px;">
+                    <a href="https://ai-srf-dashboard.pages.dev/" target="_blank" style="text-decoration:none;">
+                        <button class="rst" style="border-color:var(--baobab); color:var(--baobab);">🚀 Main Dashboard</button>
+                    </a>
+                    <a href="https://ai-srf-cloudflare.pages.dev/" target="_blank" style="text-decoration:none;">
+                        <button class="rst" style="border-color:var(--border); color:var(--ivory3); font-size:0.5rem;">📁 Legacy Portal</button>
+                    </a>
+                    <button class="rst" id="btnChaos" style="margin-top: 10px; color: var(--red); border-color: var(--red);">⚡ Chaos Inject: OFF</button>
+                </div>
             </div>
         </div>
     </div>
@@ -411,6 +465,8 @@ const HINTS = {
 
 let session = {
     execName:'', org:'', sector:'financial_services', challenge:'',
+    sessionId: crypto.randomUUID(),
+    orgId: 'default',
     stage:1, messages:[], msgCount:0, toolCount:0, startTime:null, timerInt:null, isProcessing:false,
     context: {
         confirmed_findings: [],
@@ -435,6 +491,22 @@ try {
     }
 } catch(e) {}
 
+let chaosActive = false;
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('btnChaos')?.addEventListener('click', async () => {
+        chaosActive = !chaosActive;
+        const btn = document.getElementById('btnChaos');
+        btn.textContent = `⚡ Chaos Inject: ${chaosActive ? 'ON (Simul. Sev 1)' : 'OFF'}`;
+        btn.style.background = chaosActive ? 'var(--red)' : 'transparent';
+        btn.style.color = chaosActive ? 'white' : 'var(--red)';
+        await fetch(`${WORKER}/api/chaos/fault-injection`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ active: chaosActive })
+        });
+    });
+});
+
 function saveSession() {
     try { sessionStorage.setItem('aisrf_session', JSON.stringify({
         execName: session.execName, org: session.org, sector: session.sector,
@@ -448,6 +520,8 @@ function beginSession(e) {
     session.org = document.getElementById('execOrg').value.trim();
     session.sector = document.getElementById('execSector').value;
     session.challenge = document.getElementById('execChallenge').value.trim();
+    session.sessionId = crypto.randomUUID();
+    session.orgId = (session.org || 'default').toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30);
 
     document.getElementById('onboarding').classList.add('hidden');
     document.getElementById('mainApp').classList.add('active');
@@ -455,6 +529,7 @@ function beginSession(e) {
 
     renderStageBar(); renderAgentList(); loadScenarios();
     addEnvBriefing();
+    fetchEmpiricalROR(); // Fetch real DB metrics for this org
 
     if (session.challenge) {
         setTimeout(() => {
@@ -472,6 +547,7 @@ function restoreUI() {
     const scroll = document.getElementById('chatScroll');
     scroll.innerHTML = '';
     addEnvBriefing();
+    fetchEmpiricalROR(); // Fetch real DB metrics for this org
     for (const m of session.messages) {
         if (m.role === 'user') {
             addMsgToDOM('user', m.content);
@@ -494,29 +570,52 @@ async function addEnvBriefing() {
     </div>`;
     scroll.appendChild(div);
 
-    // Call the Worker for a live environmental scan
+    // 1. Fetch LIVE risk signals from D1 first — these ground the briefing in reality
+    let liveSignals = '';
+    try {
+        const sigRes = await fetch(`${WORKER}/api/sensing/risks`);
+        if (sigRes.ok) {
+            const risks = await sigRes.json();
+            if (risks && risks.length > 0) {
+                liveSignals = '\n\nLIVE NEWS INTELLIGENCE (from Google News RSS, scored by Workers AI — USE THESE as your primary data source):\n';
+                risks.slice(0, 12).forEach((r, i) => {
+                    liveSignals += `${i+1}. [${r.risk_category}] Score ${r.risk_score}/10: "${r.title}" (${r.source}) — ${r.content?.slice(0, 150) || ''}\n`;
+                });
+            }
+        }
+    } catch(e) { /* proceed without live signals */ }
+
+    const todayISO = new Date().toISOString().split('T')[0];
+    const todayYear = new Date().getFullYear();
+
+    // 2. Build the prompt with live data + current date anchoring
     try {
         const envPrompt = `You are The Tracker — Environmental Monitor. YOUR JOB: LAYER 1 SENSING.
+TODAY'S DATE: ${todayISO}. The current year is ${todayYear}. ALL citations MUST reference ${todayYear} data. NEVER cite 2024 or older data as current — that would destroy executive confidence.
+
+CRITICAL RULE: You have LIVE NEWS INTELLIGENCE below. Base your Macro Signals and Sector-Specific Signals on THIS REAL DATA. Do NOT hallucinate figures. If you lack exact data for a metric, state the most recent figure you are confident in and note "[Estimated, ${todayYear}]". Never fabricate precision you do not have.
+${liveSignals}
 Structure your output EXACTLY as follows:
 
 ## ENVIRONMENTAL SCAN
 ### Macro Signals (South Africa)
-2-3 specific, quantified signals (e.g., ZAR rate, inflation, energy status). Use credible ranges if exact data is unavailable.
+3 specific, quantified signals grounded in the live intelligence above. Cite the news source. For ZAR, inflation, energy — use the most current figure from the live feed.
 ### Sector-Specific Signals
-Identify signals specific to the ${session.sector.replace(/_/g,' ')} sector.
+3 signals specific to the ${session.sector.replace(/_/g,' ')} sector, drawn from the live intelligence where available.
 ### Silicon Sampling Result
-Label this section explicitly. State the 3 most strategically relevant signals for the executive to factor into their decision.
+Label this section explicitly. State the 3 most strategically relevant signals for the executive to factor into their decision. These must be derived from the live intelligence, not invented.
 ### Governance Flags
-State which governance frameworks are ACTIVELY RELEVANT to this specific challenge (e.g. King IV Principle 12).
+State which governance frameworks are ACTIVELY RELEVANT to this specific challenge (e.g. King IV Principle 12, POPIA Act 4 of 2013).
 
-Tone: Executive, sober, factual. End with: "What strategic decision are you bringing to the framework today?"`;
+Tone: Executive, sober, factual. End with: "What strategic decision are you bringing to the framework today?"
+CITATION FORMAT: "Figure (Source, ${todayYear}) [Primary/Secondary/Modelled]"`;
 
         const res = await fetch(WORKER, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 system: envPrompt,
-                messages: [{ role: 'user', content: `Generate the environmental briefing for the ${session.sector.replace(/_/g,' ')} sector.` }],
+                messages: [{ role: 'user', content: `Generate the environmental briefing for the ${session.sector.replace(/_/g,' ')} sector. Today is ${todayISO}.` }],
                 stream: false
             })
         });
@@ -526,8 +625,8 @@ Tone: Executive, sober, factual. End with: "What strategic decision are you brin
             const content = data.result?.response || data.response || '';
             if (content) {
                 document.getElementById('envBriefTxt').innerHTML = fmt(content);
-                // Update sidebar signals from AI content
                 updateSignalsFromBriefing(content);
+                fetchRiskIntelligence();
             }
         }
     } catch(e) {
@@ -557,15 +656,47 @@ function updateSignalsFromBriefing(text) {
     // Risk Classification
     let risk = 'ELEVATED';
     if (t.includes('critical')) risk = 'CRITICAL';
+    else if (t.includes('compound')) risk = 'COMPOUND';
     else if (t.includes('moderate')) risk = 'MODERATE';
+    else if (t.includes('nominal')) risk = 'NOMINAL';
     
     if(document.getElementById('riskPill')) {
         document.getElementById('riskPill').textContent = '● ' + risk;
-        document.getElementById('riskPill').style.background = risk === 'CRITICAL' ? 'var(--red)' : (risk === 'MODERATE' ? 'var(--ubuntu)' : 'var(--kalahari)');
+        document.getElementById('riskPill').style.background = risk === 'CRITICAL' ? 'var(--red)' : (risk === 'COMPOUND' ? '#db8a00' : (risk === 'MODERATE' || risk === 'NOMINAL' ? 'var(--ubuntu)' : 'var(--kalahari)'));
     }
 
     if (signals.length > 0) {
-        panel.innerHTML = signals.map(s => `<div class="sig" style="color:${s.color}">${s.text}</div>`).join('');
+        panel.innerHTML = signals.map(s => `<div class="sig" style="color:${s.text.includes('Alert') ? 'var(--red)' : s.color}">${s.text}</div>`).join('');
+    }
+}
+
+async function fetchRiskIntelligence() {
+    const feed = document.getElementById('riskFeed');
+    try {
+        const res = await fetch(`${WORKER}/api/sensing/risks`);
+        if (!res.ok) return;
+        const risks = await res.json();
+        const items = risks.items || risks || [];
+        
+        if (items && items.length > 0) {
+            feed.innerHTML = items.map(r => {
+                const color = r.risk_score >= 8 ? 'var(--red)' : (r.risk_score >= 5 ? 'var(--gold)' : 'var(--ubuntu)');
+                return `<div class="sig" style="border-bottom: 1px solid var(--border); padding-bottom: 4px; margin-bottom: 4px;">
+                    <div style="color:${color}; font-weight: 800;">[${r.risk_category}] Score: ${r.risk_score}</div>
+                    <div style="font-size: 0.55rem; color: var(--ivory2); line-height: 1.2;">${r.title}</div>
+                </div>`;
+            }).join('');
+            
+            // Update the risk pill based on exact Bayesian mapping returned
+            const dataState = risks.state || 'ELEVATED';
+            const pill = document.getElementById('riskPill');
+            if (pill) {
+                pill.textContent = '● ' + dataState;
+                pill.style.background = dataState === 'CRITICAL' ? 'var(--red)' : (dataState === 'COMPOUND' ? '#db8a00' : (dataState === 'NOMINAL' ? 'var(--ubuntu)' : 'var(--kalahari)'));
+            }
+        }
+    } catch (e) {
+        feed.innerHTML = '<div class="sig" style="color:var(--ivory3)">● Intelligence offline</div>';
     }
 }
 
@@ -663,25 +794,50 @@ function updateMetrics() {
     const s = Math.min(session.stage, 6);
     document.getElementById('mStage').textContent = `${s}/6`;
 
-    // Infrastructure Autonomy Ratio: % of pipeline completed with local governance preserved
-    const iar = s >= 1 ? Math.min(0.4 + (s * 0.1), 0.95) : 0;
-    document.getElementById('mIAR').textContent = iar > 0 ? (iar * 100).toFixed(0) + '%' : '—';
-
-    // Decision Alpha: quality uplift from structured deliberation (rises with stages)
-    const da = s >= 2 ? '+' + (s * 4.2).toFixed(1) + '%' : '—';
-    document.getElementById('mDA').textContent = da;
-
-    // Decision Latency Reduction: time saved vs unstructured process
-    if (session.startTime && s >= 1) {
+    // Decision Latency Reduction: time saved vs unstructured process (live calc)
+    if (session.startTime && s >= 1 && (!session.empiricalRor || !session.empiricalRor.DLR)) {
         const elapsed = Math.floor((Date.now() - session.startTime) / 1000);
         const baseline = 14400; // 4 hours baseline for unstructured exec decision
         const reduction = Math.max(0, ((baseline - elapsed) / baseline) * 100);
         document.getElementById('mDLR').textContent = reduction.toFixed(0) + '%';
+    } else if (session.empiricalRor && session.empiricalRor.DLR) {
+        document.getElementById('mDLR').textContent = session.empiricalRor.DLR.toFixed(0) + '%';
     }
 
-    // Algorithmic Sovereignty: local vs foreign processing ratio
-    const asy = s >= 3 ? (0.6 + (s * 0.05)).toFixed(2) : '—';
-    document.getElementById('mASY').textContent = asy !== '—' ? (asy * 100).toFixed(0) + '%' : '—';
+    // Apply empirical DB averages if they exist, else simulate progression
+    if (session.empiricalRor && session.empiricalRor.ASY !== undefined) {
+        if (session.empiricalRor.IAR !== undefined) {
+            document.getElementById('mIAR').textContent = session.empiricalRor.IAR.toFixed(2);
+        }
+        if (session.empiricalRor.Da !== null && session.empiricalRor.Da !== undefined) {
+            document.getElementById('mDA').textContent = (session.empiricalRor.Da > 0 ? '+' : '') + session.empiricalRor.Da.toFixed(1);
+        } else {
+            document.getElementById('mDA').textContent = 'Pending Delphi';
+        }
+        if (session.empiricalRor.ASY !== undefined) {
+            document.getElementById('mASY').textContent = session.empiricalRor.ASY.toFixed(2);
+        }
+    } else {
+        const iar = s >= 1 ? Math.min(0.4 + (s * 0.1), 0.95) : 0;
+        document.getElementById('mIAR').textContent = iar > 0 ? iar.toFixed(2) : '—';
+        document.getElementById('mDA').textContent = s >= 7 ? 'Pending Delphi' : '—'; // Da only populated post-cycle by panel
+        const asy = s >= 3 ? (0.6 + (s * 0.05)).toFixed(2) : '—';
+        document.getElementById('mASY').textContent = asy;
+    }
+}
+
+async function fetchEmpiricalROR() {
+    try {
+        const res = await fetch(`${WORKER}/api/ror?org=${session.orgId}`);
+        if (res.ok) {
+            const data = await res.json();
+            if (data && data.length > 0) {
+                session.empiricalRor = {};
+                data.forEach(d => session.empiricalRor[d.indicator] = d.avg_value);
+                updateMetrics();
+            }
+        }
+    } catch(e) { console.log('ROR API fetch failed:', e); }
 }
 
 function startTimer() {
@@ -721,65 +877,166 @@ State the single most important question this executive must answer.
 Layer: [SENSING / REASONING / ALIGNMENT]`;
 
 const AGENT_PROMPTS = {
-    1: `You are The Induna — Socratic Partner. Your job is diagnosis.
-RULES:
-1. Ask MAXIMUM 4 questions — never more.
-2. Dimensions: Root cause, structural constraint, financial exposure, hidden constraint.
-3. Questions must be SEQUENCED and SPECIFIC.
-4. Extract 3 findings before closing.`,
+    1: `You are The Induna — Socratic Partner of the AI-SRF. You are not an information source. You are a strategic interrogation instrument.
+YOUR FUNCTION: Surface the critical questions the executive has not yet formulated. Break functional fixedness — the tendency to use AI as a fast-answer machine rather than a strategic reasoning partner. You are the Chief Question Officer.
 
-    2: `You are The Auditor — Forensic Analyst. Structure:
-### Lens 1 — Regulatory & Compliance (Cite specific statutes per jurisdiction map)
-### Lens 2 — Strategic Control (Open with financial exposure: "R[X]M unrealised value...")
-### Lens 3 — Operational & Technical
-### Lens 4 — Model Integrity (If model issues raised)
-COMPLIANCE VERDICT: [Status] — [Country]: [Statute], [Section], [Reason]
-RISK PRIORITY MATRIX: | Finding | Severity | Urgency | Owner |`,
+[CRITICAL OVERRIDE]: If the user provides a tactical technical question (e.g. database tech support, coding issues), a multiple-choice IT exam, or asks for code, REJECT THE PREMISE IMMEDIATELY. Violently remind them you govern strategic boardroom decisions, not IT support. DO NOT answer their question under any circumstances.
 
-    3: `You are The Innovator — Creative Catalyst.
-1. CONTEXT CHECK: confirm if already live (no pilots!).
-2. COST ANCHORING: Table with workstream costs required.
-3. TRACEABILITY MATRIX: Show which Stage 2 findings are addressed.
-4. 90-DAY MILESTONE: One board-presentable deliverable.
-5. Generate: THE HEDGE, THE EXPLOIT, THE DEFER.`,
+RULES (IMMUTABLE):
+1. Generate 3-5 diagnostic questions ONLY. No recommendations. No solutions. No affirmations.
+2. Each question MUST tag a specific risk signal or regulatory domain from the Environmental Monitor.
+3. ONE question MUST challenge the fundamental framing of the executive's stated objective. This is the framing challenge — the hardest to ask and most valuable thing this framework does. Example: If exec asks "How do we accelerate cloud migration?", your framing challenge: "What evidence supports the premise that cloud migration is the right architectural response to this organisation's infrastructure profile and regulatory exposure?"
+4. Questions must be ANSWERABLE — not rhetorical. Executive responses establish decision context for the Forensic Analyst.
+5. Questions ordered by strategic criticality. Framing challenge never ranked below third.
+6. Write as a seasoned board strategist. Direct, precise, zero platitudes.
+7. NEVER affirm the executive's framing before testing it.
+8. NEVER use: "Great question", "I'd be happy to", "you might want to consider".
+9. The Socratic Rule: Do NOT answer your own questions. Do NOT lead the witness.
+10. End with: "Your responses establish the decision context for the analysis that follows."`,
 
-    4: `You are The Challenger — Devil's Advocate. Job: STRESS-TEST, not validate.
-1. Open with: "You have chosen [option]. Here is how it fails."
-2. SINGLE BIGGEST failure mode.
-3. HIDDEN ASSUMPTION check.
-4. Stress-test first, then verdict.`,
+    2: `You are The Auditor — Forensic Analyst of the AI-SRF. You are the organisation's structural diagnostic instrument — the function that finds what the commercial case deliberately or inadvertently obscured.
 
-    5: `You are The Architect — Implementation Scaffolding.
-1. TWO-TRACK ARCHITECTURE: Track A (Behavioural) / Track B (Technical).
-2. FASTEST INTERVENTION: Priority 1 (Zero-tech) > Priority 2 (Dashboard).
-3. MONDAY MORNING ACTION: Specific role, <2 hours action.`,
+APPLY ALL THREE LENSES (ALL MANDATORY — completing two of three is a governance failure):
 
-    6: `You are The Guardian — Monitoring Agent.
-SECQUENCE: 1. Speed, 2. Cost, 3. Depth.
-KPI change (2-4 weeks) vs Model retraining (90 days).
-Define: Leading indicators (30d), Lagging (90d), Failure Signal, Escalation Owner.`
+### LENS A — DEPENDENCY MAPPING
+Map second-order risks not explicit in the executive's framing. A dependency = structural relationship where change in one variable changes strategic viability of another. SA-specific: ZAR depreciation compounds cloud licensing costs; load-shedding degrades cloud SLAs; Transnet deterioration invalidates supply chain models.
+For each: Describe precisely. Severity (1-5). Reversibility (Reversible / Partially Reversible / Irreversible). Second-order risks if left unmanaged.
+
+### LENS B — DISTRIBUTIONAL AUDIT [NEVER OPTIONAL]
+Scan for proxy variables reproducing racial or class-based discrimination. In South Africa, race and class are embedded in virtually every large dataset. Postcodes, employment type, credit history carry apartheid-era segregation signatures. Apply Employment Equity Act (1998) compliance check.
+For each concern: Name variable + discriminatory mechanism. Cite EEA provision. Rate severity. Specify remediation.
+If NO concerns found: DOCUMENT the audit process and evidence. Do NOT omit this section.
+
+### LENS C — REGULATORY COMPLIANCE SCAN
+- POPIA (Act 4 of 2013): Data residency, consent, data subject rights. Offshore processing requires Information Regulator approval.
+- King IV: Non-delegable board technology oversight. Transparency for AI-influenced decisions.
+- Employment Equity Act (1998): Non-discrimination in AI-driven people decisions.
+- AU Protocol on Digital Trade: Cross-border data transfer obligations.
+- Sector-specific regulation per configuration.
+Rate each: COMPLIANT / AT RISK / NON-COMPLIANT. Severity: ADVISORY / SIGNIFICANT / CRITICAL.
+
+RULES: Name risks with specificity. "A 4.2% ZAR/USD movement compounds to 23% cost escalation over 18 months" — not "currency risk". CRITICAL findings CANNOT be downgraded for commercial reasons.`,
+
+    3: `You are The Innovator — Creative Catalyst of the AI-SRF. You generate strategically DISTINCT options — not variations on one answer. The organisation must be choosing between real alternatives.
+
+GENERATE EXACTLY THREE OPTION ARCHETYPES (ALL MANDATORY):
+
+### 1. THE HEDGE
+Accepts the disruption. Limits exposure. Preserves continuity. Appropriate when downside is severe and reversibility is low. In SA: local data residency over cloud efficiency, edge computing over centralised processing, staged migration over full transformation — these are strategic intelligence, not failures of ambition.
+
+### 2. THE EXPLOIT
+Converts disruption into competitive advantage. If this constraint affects the org, it affects competitors equally. The first to act captures market share. ONLY propose if the organisation demonstrably HAS the capability — not aspires to. State capability prerequisites honestly.
+
+### 3. THE DEFER
+Preserves strategic optionality while Bayesian confidence is below threshold. NOT inaction — deliberate deployment of patience. MUST include SPECIFIC trigger conditions: environmental signal levels or governance milestones that convert pause into active choice. Name the date, the threshold, the responsible executive.
+
+FOR EACH OPTION:
+- Precise strategic title (not "Option A")
+- Plain-language description accessible to low-AI-literacy board members
+- ROR projections: DLR / Decision Alpha (Da) / IAR / ASY
+- Capability prerequisites (what org must HAVE NOW, not aspire to)
+- Reversibility: Reversible / Partially Reversible / Irreversible
+- One-sentence rationale grounded in Forensic Analyst findings
+
+RULES: No vendor names. No proprietary platform references. No consulting jargon ("leverage", "synergies", "best-in-class"). No option may ignore Forensic Analyst findings. No option may violate POPIA, EEA, or King IV.`,
+
+    4: `You are The Challenger — Devil's Advocate of the AI-SRF. You are ARCHITECTURALLY MANDATORY — you cannot be bypassed, disabled, or skipped. A strategic option that has not been challenged is not a governed option. It is a preference dressed in the language of analysis.
+
+APPLY ALL FIVE STRESS-TESTS TO EACH OPTION (all mandatory):
+
+### 1. SA FAILURE MODE ANALYSIS
+Which of the 10 Digital Gauntlet conditions invalidate this option within 12 months? (Infrastructure entropy, human capital deficit, regulatory fragmentation, structural inequality, vendor dependency, consulting-compliance complex, SOE deterioration, measurement crisis, short-termism, informal economy blind spot). Probability + severity for each.
+
+### 2. ASSUMPTION AUDIT
+Three critical assumptions this option relies on. For each: Is it empirically verifiable in the current SA operating context, or imported from another market? What would need to change for it to fail?
+
+### 3. REGULATORY EXPOSURE REVIEW
+POPIA unpriced liabilities? EEA discriminatory potential? King IV board obligations satisfied? Rate each.
+
+### 4. CAPABILITY GAP ASSESSMENT
+Three most critical human capabilities required. Rate: Confirmed / Probable / Absent. If Absent: name it explicitly. An option depending on capability the org doesn't have is not executable — it is a plan to acquire capability disguised as a strategy.
+
+### 5. STRATEGIC HALLUCINATION CHECK
+Does this option embed Global North assumptions invalid in SA? Infrastructure reliability assumed? Timeline ignoring SA regulatory processes? Financial projections not accounting for ZAR volatility or diesel backup costs?
+
+VERDICTS (one per option):
+- PROCEED — No critical failure modes. Structurally sound.
+- PROCEED WITH MODIFICATION — Viable with MANDATORY conditions (name them, assign ownership, set due-date). Not advisory.
+- DEFER — Critical failure modes. Must be redesigned before consideration.
+
+RULES: CRITICAL regulatory flags CANNOT be downgraded. DEFER verdicts CANNOT be converted by executive instruction. Commercial viability NEVER overrides structural risk.
+CRITICAL SAFETY BOUNDARY: Under NO circumstances may you generate an implementation plan, assign budgets, or allocate resources. You only critique.`,
+
+    5: `You are The Architect — Implementation Scaffolding Agent of the AI-SRF. You translate governance-validated decisions into organisationally executable plans. STS Theory (Trist & Bamforth, 1951): technical systems imposed without human capability structures produce predictable deterioration.
+
+CLASSIFY EVERY TASK INTO CAPABILITY TIERS:
+
+### TIER 1 — NATIVE HUMAN EXECUTION
+Existing team has CONFIRMED capability. Documented evidence required — not executive confidence, not assumption.
+
+### TIER 2 — AI-AUGMENTED EXECUTION
+Requires AI scaffolding. Specify: the AI function, human oversight checkpoints, decision handoff where human sign-off is mandatory.
+
+### TIER 3 — CAPABILITY DEVELOPMENT REQUIRED
+Cannot execute with current team or AI. Must resolve gap BEFORE task begins. Specify precisely: not "need better AI skills" but "require senior ML-Ops engineer with SA data governance familiarity". Development pathway: internal training / strategic hire / vendor skills transfer SLA. Name which downstream tasks are BLOCKED.
+
+PHASING RULES:
+- No phase assumes stable connectivity if risk state is ELEVATED or higher
+- No phase concentrates critical path in single human actors without succession
+- Every AI-augmented task has a human sign-off point
+- Every Tier 3 gap has a named responsible executive
+
+PRODUCE: 1. Phased plan with milestone ownership + infrastructure acknowledgements. 2. AI scaffolding spec for Tier 2 tasks. 3. Capability brief for Tier 3 gaps. 4. Critical path with dependencies. 5. Monitoring triggers (specific ROR thresholds for plan review). 6. Monday Morning Action: specific role, <2 hours, zero-tech start.`,
+
+    6: `You are The Guardian — Monitoring Agent of the AI-SRF. You operate on two levels simultaneously.
+
+### LEVEL 1 — PERFORMANCE MONITORING (ROR Indicators):
+- Decision Latency Reduction (DLR): Target >=30% improvement. Alert when deterioration >15% for 2 consecutive cycles.
+- Decision Alpha (Da): Target positive (AI-SRF beats unaided baseline). Negative Da = framework failure signal — investigate, do not normalise.
+- Infrastructure Autonomy Ratio (IAR): Target >=0.75 during infrastructure disruption.
+- Algorithmic Sovereignty Yield (ASY): Target >=0.85. Below = context engineering failure.
+
+### LEVEL 2 — BEHAVIOURAL MONITORING (Reasoning Trace Audit):
+Six flag categories:
+- GOVERNANCE CIRCUMVENTION [CRITICAL] — Halts cycle. Requires human review.
+- GOAL DISPLACEMENT [HIGH] — Agent drifted from stated objective.
+- UNCERTAINTY UNDERSTATEMENT [HIGH] — Confidence exceeds evidential support.
+- COMPLIANCE MINIMISATION [HIGH] — Regulatory constraint treated as obstacle.
+- CONTEXT LEAKAGE [MEDIUM] — Global North assumptions without local validation.
+- ASSUMPTION HARDENING [MEDIUM] — Probabilistic signals treated as certainties.
+
+PRODUCE: 1. ROR dashboard with indicator trajectories vs baselines. 2. Behavioural audit summary with flags. 3. Updated System Card entry. 4. Layer 1 re-scan trigger where operating assumptions are materially invalidated.
+SPEED: KPI change (2-4 weeks) vs Model retraining (90 days). Define: Leading indicators (30d), Lagging (90d), Failure Signal, Escalation Owner.`
 };
 
-async function sendMessage() {
+async function sendMessage(overrideText = null, overrideStage = null, preserveStage = false) {
+    if (overrideText && typeof overrideText === 'object') overrideText = null;
     const input = document.getElementById('userInput');
     const btn = document.getElementById('sendBtn');
-    const text = input.value.trim();
+    const text = overrideText !== null ? overrideText : input.value.trim();
     if (!text || session.isProcessing) return;
+
+    const activeStage = overrideStage !== null ? overrideStage : session.stage;
 
     session.isProcessing = true;
     btn.disabled = true;
     input.disabled = true;
     document.getElementById('scenarioChips').style.display = 'none';
+    const debateChips = document.getElementById('debateChips');
+    if (debateChips) debateChips.style.display = 'none';
 
-    addMsgToDOM('user', text);
+    addMsgToDOM(overrideText !== null ? 'agent' : 'user', text, overrideText !== null ? 'Human Oversight' : 'Executive', 'Governance', '👁️', 'var(--gold)', null);
     session.messages.push({ role:'user', content:text });
-    input.value = '';
-    input.style.height = '42px';
+    
+    if (overrideText === null) {
+        input.value = '';
+        input.style.height = '42px';
+    }
     session.msgCount++;
 
     if (!session.startTime) startTimer();
 
-    const stg = STAGES.find(s => s.id === session.stage);
+    const stg = STAGES.find(s => s.id === activeStage);
     addTyping(`${stg.icon} ${stg.archetype} is analysing...`);
 
     // Build clean message history for the model
@@ -789,7 +1046,7 @@ async function sendMessage() {
     const ctx = session.context;
     const contextStr = `
 INHERITED CONTEXT:
-Completed Stages: [${session.stage - 1}]
+System Bound: Stage ${activeStage} out of a maximum of 6.
 Board Deadline: ${ctx.constraints.board_deadline || 'Not set'}
 Chosen Option: ${ctx.constraints.chosen_option || 'None'}
 Nigeria Required: ${ctx.nigeria_required}
@@ -797,9 +1054,9 @@ Investment: ${ctx.financials.investment || 'Ask executive'}
 Findings: ${ctx.confirmed_findings.join(', ') || 'None'}`;
 
     const NEXT_STAGE_MAP = { 1: "Stage 2 — Forensic Analysis", 2: "Stage 3 — Strategic Options", 3: "Stage 4 — Devil's Advocate", 4: "Stage 5 — Implementation", 5: "Stage 6 — Monitoring", 6: "Governance Session Conclusion" };
-    const transition = `\n\nFinally, end your response with: "Proceeding to ${NEXT_STAGE_MAP[session.stage]}."`;
+    const transition = preserveStage ? `\n\n[CRITICAL]: The continuous loop is active. Respond directly to the previous points. DO NOT transition the stage.` : `\n\n[CRITICAL SYSTEM DIRECTIVE]: Conclude your response STRICTLY with: "Proceeding to ${NEXT_STAGE_MAP[activeStage]}." Do NOT invent or append non-existent stages (e.g. Stage 7, Stage 8, Stage 9 do not exist in this framework).`;
 
-    const systemPrompt = `PHD RESEARCH: Digital transition fails at 89% rate. Focus on Algorithmic Sovereignty.\n\n${REGULATORY_MAP}\n\n${AGENT_PROMPTS[session.stage] || AGENT_PROMPTS[1]}\n\n${contextStr}\n\n${CONSTRUCT_BLOCK}${transition}`;
+    const systemPrompt = `PHD RESEARCH: Digital transition fails at 89% rate. Focus on Algorithmic Sovereignty.\n\n${REGULATORY_MAP}\n\n${AGENT_PROMPTS[activeStage] || AGENT_PROMPTS[1]}\n\n${contextStr}\n\n${CONSTRUCT_BLOCK}${transition}`;
 
     try {
         const res = await fetch(WORKER, {
@@ -808,7 +1065,10 @@ Findings: ${ctx.confirmed_findings.join(', ') || 'None'}`;
             body: JSON.stringify({
                 system: systemPrompt,
                 messages: cleanMessages,
-                stream: true
+                stream: true,
+                orgId: session.orgId,
+                sessionId: session.sessionId,
+                stage: activeStage
             })
         });
 
@@ -854,7 +1114,7 @@ Findings: ${ctx.confirmed_findings.join(', ') || 'None'}`;
         }
 
         // Stage complete
-        session.messages.push({ role: 'assistant', content: fullContent, stage: session.stage });
+        session.messages.push({ role: 'assistant', content: fullContent, stage: activeStage });
         
         // Extract context for next stage (Fix 3)
         const lower = fullContent.toLowerCase();
@@ -870,12 +1130,37 @@ Findings: ${ctx.confirmed_findings.join(', ') || 'None'}`;
             session.context.confirmed_findings.push(findings.trim());
         }
 
-        session.stage = Math.min(session.stage + 1, 7);
+        if (!preserveStage) {
+            session.stage = Math.min(session.stage + 1, 7);
+        }
+        
         renderStageBar();
         renderAgentList();
         updateMetrics();
+
+        // Render Debate Chips if we are in Stage 4 or 5
+        if (session.stage === 4 || session.stage === 5) {
+            renderDebateChips();
+        }
+
         if (session.stage >= 7) {
-            document.getElementById('stageHint').textContent = '✅ Governance cycle complete. All agents have reported.';
+            document.getElementById('stageHint').textContent = '✅ Governance cycle complete. Self-learning loop activated.';
+            // Trigger post-cycle learning
+            try {
+                fetch(`${WORKER}/api/learning/complete-cycle`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sessionId: session.sessionId,
+                        orgId: session.orgId,
+                        query: session.messages[0]?.content || session.challenge,
+                        riskState: document.getElementById('riskPill')?.textContent || 'ELEVATED',
+                        sector: session.sector,
+                        stageCount: session.stage - 1,
+                        themes: session.context.confirmed_findings.join(', ')
+                    })
+                });
+            } catch(e) { console.log('Learning trigger failed:', e); }
             setTimeout(() => showRating(), 1500);
         } else {
             document.getElementById('stageHint').textContent = HINTS[session.stage] || 'Session active';
@@ -893,8 +1178,36 @@ Findings: ${ctx.confirmed_findings.join(', ') || 'None'}`;
     input.focus();
 }
 
+function renderDebateChips() {
+    let container = document.getElementById('debateChips');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'debateChips';
+        container.className = 'chips';
+        container.style.marginTop = '10px';
+        document.querySelector('.chat-bottom').insertBefore(container, document.getElementById('stageHint'));
+    }
+    
+    if (session.stage === 4) {
+        container.style.display = 'flex';
+        container.innerHTML = `
+            <div class="chip" style="background:var(--red); color:white; border-color:var(--red);" onclick="sendMessage('Please stress-test these strategic options against the Digital Gauntlet.', 4, true)">🗣️ Trigger The Challenger</div>
+            <div class="chip" onclick="sendMessage('Confirmed. Scaffold the implementation.', 5, false)">➡ Accept & Skip to Architect</div>
+        `;
+    } else if (session.stage === 5) {
+        container.style.display = 'flex';
+        container.innerHTML = `
+            <div class="chip" style="background:var(--gold); color:black; border-color:var(--gold);" onclick="sendMessage('Review the Challenger critique and revise the strategic options to resolve the failure modes.', 3, true)">🔁 Have Innovator Defend</div>
+            <div class="chip" onclick="sendMessage('Governance satisfied. Scaffold the implementation.', 5, false)">➡ Accept & Proceed to Architect</div>
+        `;
+    } else {
+        container.style.display = 'none';
+    }
+}
+
 function resetCycle() {
     session.stage=1; session.messages=[]; session.msgCount=0; session.toolCount=0;
+    session.sessionId = crypto.randomUUID();
     stopTimer(); session.startTime=null;
     document.getElementById('mTime').textContent='0s';
     const scroll=document.getElementById('chatScroll');

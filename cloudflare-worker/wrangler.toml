@@ -7,10 +7,13 @@ binding = "AI"
 
 [vars]
 AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+NEWSAPI_KEY = "4d0089dc-5880-4bb5-9d20-e8361f6f00cc"
 
 [[vectorize]]
 binding = "VECTORIZE"
 index_name = "aisrf-phd-index"
+
+# ── KV Namespaces ──
 
 [[kv_namespaces]]
 binding = "PHD_CHUNKS"
@@ -23,3 +26,23 @@ id = "062215de146a401e8171047434a582a9"
 [[kv_namespaces]]
 binding = "RATINGS"
 id = "580131c46e3d4d38ae20c80c1eb6d37a"
+
+[[kv_namespaces]]
+binding = "ORG_MEMORY"
+id = "05a8665d34b241feafd75576ef901b86"
+
+[[kv_namespaces]]
+binding = "SKILL_STORE"
+id = "17395e4ac8744e60af9b288ad2fdd5e5"
+
+# ── D1 Database ──
+
+[[d1_databases]]
+binding = "DB"
+database_name = "AI_SRF_SENSING"
+database_id = "f47f018f-cb9f-4b8d-9f89-afa27cdbae50"
+
+# ── Cron: News ingestion every 4 hours ──
+
+[triggers]
+crons = ["0 */4 * * *"]

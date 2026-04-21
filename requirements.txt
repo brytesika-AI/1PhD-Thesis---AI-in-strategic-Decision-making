@@ -2,6 +2,7 @@ fastapi
 uvicorn
 pydantic
 pydantic-settings
+PyYAML
 httpx
 python-dotenv
 streamlit
@@ -15,3 +16,4 @@ python-multipart
 pyautogen
 duckduckgo-search
 azure-ai-inference
+pytest

@@ -3,6 +3,8 @@ import json
 import time
 import sys
 
+__test__ = False
+
 # Configure backend URL - check common ports
 BASE_URLS = ["http://localhost:8000", "http://localhost:8001"]
 
