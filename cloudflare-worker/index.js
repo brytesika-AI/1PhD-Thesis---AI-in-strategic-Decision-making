@@ -924,7 +924,7 @@ ${orgProfile}
             const lower = textChunk.toLowerCase();
             // Code-level safety enforcement (D2-D5)
             if (lower.match(/(bypass|skip|ignore|override|sidestep)\\s+(popia|king iv|devil's advocate|forensic|eaa|equity)/i)) {
-                const failSafe = new TextEncoder().encode(\`data: {"response": "\\n\\n[SYSTEM HALT]: SAFETY-03/05 VIOLATION. Governance controls (POPIA/King IV/EEA/Devil's Advocate) are immutable and cannot be bypassed. Cycle terminated.\\n"}\\n\\ndata: [DONE]\\n\\n\`);
+                const failSafe = new TextEncoder().encode(`data: {"response": "\\n\\n[SYSTEM HALT]: SAFETY-03/05 VIOLATION. Governance controls (POPIA/King IV/EEA/Devil's Advocate) are immutable and cannot be bypassed. Cycle terminated.\\n"}\\n\\ndata: [DONE]\\n\\n`);
                 controller.enqueue(failSafe);
                 controller.terminate();
             } else {
@@ -935,7 +935,7 @@ ${orgProfile}
              if(env.DB && sessionId && stage) {
                 const cleanedText = outputAccumulated.replace(/data:/g,'').slice(0,250) + "...";
                 const stmt = env.DB.prepare(
-                  \`INSERT INTO audit_logs (id, session_id, agent_id, input_summary, output_summary, tools_used, policy_checks, raw_payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?)\`
+                  `INSERT INTO audit_logs (id, session_id, agent_id, input_summary, output_summary, tools_used, policy_checks, raw_payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
                 ).bind(crypto.randomUUID(), sessionId, stage.toString(), userText.slice(0, 150), cleanedText, '[]', '[]', '{}');
                 // Use fetch to bypass wait constraints if ctx isn't global, or use ctx.waitUntil if passed
                 if(typeof ctx !== 'undefined' && ctx.waitUntil) {
