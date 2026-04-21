@@ -1,13 +1,16 @@
 name = "ai-srf-worker"
 main = "index.js"
-compatibility_date = "2024-01-01"
+compatibility_date = "2026-04-21"
+
+[observability]
+enabled = true
+head_sampling_rate = 1
 
 [ai]
 binding = "AI"
 
 [vars]
 AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
-NEWSAPI_KEY = "4d0089dc-5880-4bb5-9d20-e8361f6f00cc"
 
 [[vectorize]]
 binding = "VECTORIZE"

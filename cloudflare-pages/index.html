@@ -1009,6 +1009,22 @@ PRODUCE: 1. ROR dashboard with indicator trajectories vs baselines. 2. Behaviour
 SPEED: KPI change (2-4 weeks) vs Model retraining (90 days). Define: Leading indicators (30d), Lagging (90d), Failure Signal, Escalation Owner.`
 };
 
+function updateStrategicPanels(stage, content) {
+    const panelMap = {
+        1: ['p-briefing', 'Strategic Briefing Captured'],
+        2: ['p-evidence', 'Forensic Evidence Context'],
+        3: ['p-options', 'Strategic Options'],
+        4: ['p-stress', 'Stress Test Findings'],
+        5: ['p-roadmap', 'Implementation Roadmap'],
+        6: ['p-roadmap', 'Monitoring and Roadmap Update']
+    };
+    const target = panelMap[Math.min(stage, 6)];
+    if (!target || !content) return;
+    const panel = document.getElementById(target[0]);
+    if (!panel) return;
+    panel.innerHTML = `<div class="p-card"><h4>${target[1]}</h4><p>${fmt(content.slice(0, 1200))}</p></div>`;
+}
+
 async function sendMessage(overrideText = null, overrideStage = null, preserveStage = false) {
     if (overrideText && typeof overrideText === 'object') overrideText = null;
     const input = document.getElementById('userInput');
@@ -1058,18 +1074,25 @@ Findings: ${ctx.confirmed_findings.join(', ') || 'None'}`;
 
     const systemPrompt = `PHD RESEARCH: Digital transition fails at 89% rate. Focus on Algorithmic Sovereignty.\n\n${REGULATORY_MAP}\n\n${AGENT_PROMPTS[activeStage] || AGENT_PROMPTS[1]}\n\n${contextStr}\n\n${CONSTRUCT_BLOCK}${transition}`;
 
+    let timeoutId = null;
+    let fullContent = '';
+    const controller = new AbortController();
+    const requestPayload = {
+        system: systemPrompt,
+        messages: cleanMessages,
+        stream: true,
+        orgId: session.orgId,
+        sessionId: session.sessionId,
+        stage: activeStage
+    };
+
     try {
+        timeoutId = setTimeout(() => controller.abort(), 65000);
         const res = await fetch(WORKER, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                system: systemPrompt,
-                messages: cleanMessages,
-                stream: true,
-                orgId: session.orgId,
-                sessionId: session.sessionId,
-                stage: activeStage
-            })
+            body: JSON.stringify(requestPayload),
+            signal: controller.signal
         });
 
         if (!res.ok) throw new Error(`Worker returned ${res.status}`);
@@ -1080,7 +1103,27 @@ Findings: ${ctx.confirmed_findings.join(', ') || 'None'}`;
 
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
-        let fullContent = '', buffer = '';
+        let buffer = '';
+
+        function appendStreamText(textChunk) {
+            if (!textChunk) return;
+            fullContent += textChunk;
+            if (streamEl) streamEl.innerHTML = fmt(fullContent);
+            document.getElementById('chatScroll').scrollTop = document.getElementById('chatScroll').scrollHeight;
+        }
+
+        function processStreamLine(rawLine) {
+            const l = rawLine.trim();
+            if (!l || l.startsWith(':')) return;
+            const dataStr = l.startsWith('data: ') ? l.slice(6).trim() : l;
+            if (dataStr === '[DONE]') return;
+            try {
+                const data = JSON.parse(dataStr);
+                appendStreamText(data.response || data.result?.response || '');
+            } catch(e) {
+                if (!dataStr.startsWith('{')) appendStreamText(dataStr);
+            }
+        }
 
         while (true) {
             const { value, done } = await reader.read();
@@ -1089,29 +1132,23 @@ Findings: ${ctx.confirmed_findings.join(', ') || 'None'}`;
             const lines = buffer.split('\n');
             buffer = lines.pop();
 
-            for (const line of lines) {
-                const l = line.trim();
-                if (!l || l.startsWith(':')) continue;
-                if (l.startsWith('data: ')) {
-                    const dataStr = l.slice(6).trim();
-                    if (dataStr === '[DONE]') continue;
-                    try {
-                        const data = JSON.parse(dataStr);
-                        if (data.response) {
-                            fullContent += data.response;
-                            if (streamEl) streamEl.innerHTML = fmt(fullContent);
-                            document.getElementById('chatScroll').scrollTop = document.getElementById('chatScroll').scrollHeight;
-                        }
-                    } catch(e) {
-                        // Raw text fallback
-                        if (!dataStr.startsWith('{')) {
-                            fullContent += dataStr;
-                            if (streamEl) streamEl.innerHTML = fmt(fullContent);
-                        }
-                    }
-                }
-            }
+            for (const line of lines) processStreamLine(line);
         }
+        if (buffer.trim()) processStreamLine(buffer);
+
+        if (!fullContent.trim()) {
+            const fallbackRes = await fetch(WORKER, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...requestPayload, stream: false })
+            });
+            if (!fallbackRes.ok) throw new Error(`Worker fallback returned ${fallbackRes.status}`);
+            const fallbackData = await fallbackRes.json();
+            fullContent = fallbackData.result?.response || fallbackData.response || JSON.stringify(fallbackData);
+            if (streamEl) streamEl.innerHTML = fmt(fullContent);
+        }
+
+        updateStrategicPanels(activeStage, fullContent);
 
         // Stage complete
         session.messages.push({ role: 'assistant', content: fullContent, stage: activeStage });
@@ -1172,6 +1209,7 @@ Findings: ${ctx.confirmed_findings.join(', ') || 'None'}`;
         addMsgToDOM('agent', `Connection error: ${err.message}. The AI-SRF Worker may be temporarily unavailable.`, 'System', 'System', '⚠️', 'var(--red)', '');
     }
 
+    if (timeoutId) clearTimeout(timeoutId);
     session.isProcessing = false;
     btn.disabled = false;
     input.disabled = false;

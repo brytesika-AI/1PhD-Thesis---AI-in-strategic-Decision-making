@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI-SRF Strategic Decision OS</title>
+  <meta name="description" content="Cloudflare Pages workspace for governed AI-SRF strategic decision support.">
+  <style>
+    :root {
+      --ink: #171717;
+      --bg: #f6f3ee;
+      --panel: #ffffff;
+      --line: #d8d0c4;
+      --muted: #6e675f;
+      --accent: #8b2500;
+      --amber: #b9792a;
+      --green: #285f48;
+      --blue: #1f4f6e;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font-family: Georgia, "Times New Roman", serif; }
+    header { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 18px 24px; border-bottom: 1px solid var(--line); background: var(--panel); }
+    h1 { margin: 0; font-size: 24px; letter-spacing: .2px; }
+    .sub { color: var(--muted); font: 12px Arial, sans-serif; text-transform: uppercase; letter-spacing: .08em; }
+    .pipeline { display: grid; grid-template-columns: repeat(7, minmax(120px, 1fr)); gap: 8px; padding: 12px 24px; overflow-x: auto; border-bottom: 1px solid var(--line); }
+    .stage { min-height: 58px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: var(--panel); }
+    .stage strong { display: block; font: 700 12px Arial, sans-serif; color: var(--accent); }
+    .stage span { display: block; margin-top: 4px; font-size: 13px; color: var(--muted); }
+    main { display: grid; grid-template-columns: minmax(340px, 1.1fr) minmax(320px, .9fr); gap: 1px; min-height: calc(100vh - 146px); background: var(--line); }
+    section { background: var(--panel); padding: 20px; overflow: auto; }
+    .workspace { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 12px; align-content: start; }
+    .panel { border: 1px solid var(--line); border-radius: 8px; padding: 14px; background: #fffdf9; min-height: 130px; }
+    .panel h2 { margin: 0 0 8px; font-size: 17px; color: var(--blue); }
+    .panel p, .panel li { color: var(--muted); line-height: 1.45; font-size: 14px; }
+    label { display: block; margin: 12px 0 6px; font: 700 12px Arial, sans-serif; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+    textarea, input, select { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 10px; font: 15px Georgia, serif; background: #fffdf9; }
+    textarea { min-height: 120px; resize: vertical; }
+    button { margin-top: 12px; border: 0; border-radius: 8px; padding: 11px 14px; background: var(--accent); color: white; font: 700 13px Arial, sans-serif; cursor: pointer; }
+    pre { white-space: pre-wrap; word-break: break-word; font: 12px Consolas, monospace; background: #171717; color: #f6f3ee; padding: 12px; border-radius: 8px; min-height: 160px; }
+    @media (max-width: 900px) {
+      main, .workspace { grid-template-columns: 1fr; }
+      header { align-items: flex-start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>AI-SRF Strategic Decision OS</h1>
+      <div class="sub">Gateway control plane · Agent loop · Debate · Consensus · Cloudflare production target</div>
+    </div>
+    <div class="sub">Monitoring Agent: active watch section</div>
+  </header>
+
+  <nav class="pipeline" id="pipeline"></nav>
+
+  <main>
+    <section>
+      <form id="caseForm">
+        <label for="workerUrl">Worker API</label>
+        <input id="workerUrl" value="https://ai-srf-governance-worker.bryte-sika.workers.dev">
+        <label for="goal">Decision case goal</label>
+        <textarea id="goal">Assess a governed digital transformation decision under South African infrastructure and regulatory risk.</textarea>
+        <label for="stage">Current stage</label>
+        <select id="stage"></select>
+        <button type="submit">Run Decision Loop</button>
+      </form>
+      <pre id="output">Awaiting governed decision-loop execution.</pre>
+    </section>
+
+    <section class="workspace">
+      <div class="panel"><h2>Situational Briefing</h2><p id="briefing">No briefing captured yet.</p></div>
+      <div class="panel"><h2>Current Stage</h2><p id="currentStage">Stage 1: Environmental Monitor.</p></div>
+      <div class="panel"><h2>Evidence</h2><p id="evidence">Evidence bundle will appear after Tracker and Auditor stages.</p></div>
+      <div class="panel"><h2>Assumptions</h2><p id="assumptions">Assumption register awaits Socratic Partner output.</p></div>
+      <div class="panel"><h2>Options</h2><p id="options">Strategic options await Creative Catalyst output.</p></div>
+      <div class="panel"><h2>Stress Tests</h2><p id="stress">Devil's Advocate findings will appear here.</p></div>
+      <div class="panel"><h2>Strongest Objection</h2><p id="objection">No formal objection raised.</p></div>
+      <div class="panel"><h2>Consensus Level</h2><p id="consensus">Consensus has not been computed.</p></div>
+      <div class="panel"><h2>Implementation Roadmap</h2><p id="roadmap">Roadmap awaits Implementation Scaffolding.</p></div>
+      <div class="panel"><h2>Implementation Readiness</h2><p id="readiness">Not ready until verification chain is satisfied.</p></div>
+      <div class="panel"><h2>Audit Trace</h2><p id="audit">Every stage execution writes to D1 audit_events in production.</p></div>
+    </section>
+  </main>
+
+  <script>
+    const stages = [
+      ["tracker", "Environmental Monitor"],
+      ["induna", "Socratic Partner"],
+      ["auditor", "Forensic Analyst"],
+      ["innovator", "Creative Catalyst"],
+      ["challenger", "Devil's Advocate"],
+      ["architect", "Implementation Scaffolding"],
+      ["guardian", "Monitoring Agent"]
+    ];
+    const pipeline = document.getElementById("pipeline");
+    const stageSelect = document.getElementById("stage");
+    stages.forEach(([id, label], index) => {
+      const item = document.createElement("div");
+      item.className = "stage";
+      item.innerHTML = `<strong>${index + 1}. ${id}</strong><span>${label}</span>`;
+      pipeline.appendChild(item);
+      const option = document.createElement("option");
+      option.value = String(index + 1);
+      option.textContent = `${index + 1}. ${label}`;
+      stageSelect.appendChild(option);
+    });
+
+    document.getElementById("caseForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const api = document.getElementById("workerUrl").value.replace(/\/$/, "");
+      const body = {
+        case_id: sessionStorage.getItem("ai_srf_case_id") || crypto.randomUUID(),
+        stage: Number(document.getElementById("stage").value),
+        user_goal: document.getElementById("goal").value,
+        risk_state: "ELEVATED",
+        sector: "financial_services"
+      };
+      sessionStorage.setItem("ai_srf_case_id", body.case_id);
+      const result = await fetch(`${api}/api/loop`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...body, max_iterations: 12 })
+      }).then((response) => response.json());
+      document.getElementById("output").textContent = JSON.stringify(result, null, 2);
+      const state = result.case_state || {};
+      document.getElementById("currentStage").textContent = `Stage ${state.current_stage || body.stage}: ${state.loop?.last_agent_id || "decision_governor"}`;
+      document.getElementById("briefing").textContent = JSON.stringify(state.situational_briefing || {}, null, 2);
+      document.getElementById("evidence").textContent = JSON.stringify(state.evidence_bundle || {}, null, 2);
+      document.getElementById("assumptions").textContent = (state.assumptions || []).join("\n") || "No assumptions yet.";
+      document.getElementById("options").textContent = JSON.stringify(state.options || state.options_generated || [], null, 2);
+      document.getElementById("stress").textContent = JSON.stringify(state.devil_advocate_findings || {}, null, 2);
+      document.getElementById("objection").textContent = JSON.stringify((state.objections || [])[0] || {}, null, 2);
+      document.getElementById("consensus").textContent = JSON.stringify(state.consensus || {}, null, 2);
+      document.getElementById("roadmap").textContent = JSON.stringify(state.implementation_plan || {}, null, 2);
+      document.getElementById("readiness").textContent = JSON.stringify(state.verification_chain || {}, null, 2);
+      document.getElementById("audit").textContent = (state.audit_log_refs || state.audit_refs || []).join("\n") || "No audit references yet.";
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+{
+  "runtime": {
+    "production_target": "cloudflare",
+    "gateway_mode": "control_plane",
+    "engine_mode": "stateful_agent_loop",
+    "ui_mode": "visible_workspace",
+    "memory_scope": "case_and_org_bounded",
+    "default_storage": {
+      "structured_state": "d1",
+      "audit_events": "d1",
+      "runtime_cache": "kv",
+      "large_evidence": "r2"
+    },
+    "routing": {
+      "strategy": "decision_governor_with_explicit_agent_handoff",
+      "allow_dynamic_agent_skips": false,
+      "require_human_gate_for_configured_agents": true
+    },
+    "queues": {
+      "steering": "interrupts current logic",
+      "follow_up": "normal next actions",
+      "debate": "agent challenge and rebuttal routing"
+    },
+    "debate": {
+      "max_rounds": 3,
+      "preserve_unresolved_tensions": true,
+      "track_confidence_changes": true
+    },
+    "sandbox_policy": {
+      "blocked_by_default": true,
+      "allow_shell": false,
+      "allow_filesystem_write": false,
+      "allow_email_send": false,
+      "allow_external_post": false,
+      "allow_unreviewed_web_scrape": false
+    },
+    "event_hooks": {
+      "on_case_created": ["audit_event"],
+      "on_stage_completed": ["audit_event", "state_snapshot", "monitoring_trigger_check"],
+      "on_human_approval_required": ["audit_event", "approval_gate"],
+      "on_human_approval_decided": ["audit_event", "state_transition"],
+      "on_monitoring_tick": ["risk_refresh", "memory_checkpoint"]
+    }
+  }
+}

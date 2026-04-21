@@ -89,3 +89,42 @@ agents:
     requires_human_approval: false
     max_context_chars: 16000
     monitoring_triggers: ["System Card Generation"]
+
+  decision_governor:
+    id: "decision_governor"
+    display_name: "Decision Governor"
+    role: "Orchestration and Control"
+    system_prompt_path: "prompts/decision_governor.md"
+    allowed_tools: ["resilience_scoring", "policy_compliance_scan"]
+    output_schema: "DecisionGovernorSchema"
+    handoff_rules:
+      next: null
+    requires_human_approval: false
+    max_context_chars: 16000
+    monitoring_triggers: ["Loop Stall", "Contradiction Detected", "Escalation Required"]
+
+  consensus_tracker:
+    id: "consensus_tracker"
+    display_name: "Consensus Tracker"
+    role: "Agreement and Tension State"
+    system_prompt_path: "prompts/consensus_tracker.md"
+    allowed_tools: ["resilience_scoring"]
+    output_schema: "ConsensusTrackerSchema"
+    handoff_rules:
+      next: null
+    requires_human_approval: false
+    max_context_chars: 12000
+    monitoring_triggers: ["Unresolved Tension"]
+
+  policy_sentinel:
+    id: "policy_sentinel"
+    display_name: "Policy Sentinel"
+    role: "Governance Enforcement"
+    system_prompt_path: "prompts/policy_sentinel.md"
+    allowed_tools: ["policy_compliance_scan"]
+    output_schema: "PolicySentinelSchema"
+    handoff_rules:
+      next: null
+    requires_human_approval: false
+    max_context_chars: 12000
+    monitoring_triggers: ["Policy Violation Detected"]

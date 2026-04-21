@@ -1,0 +1,34 @@
+name = "ai-srf-governance-worker"
+main = "src/index.js"
+compatibility_date = "2026-04-21"
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[ai]
+binding = "AI"
+
+[vars]
+AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+APP_ENV = "production"
+
+[[kv_namespaces]]
+binding = "CONFIG_CACHE"
+id = "062215de146a401e8171047434a582a9"
+
+[[kv_namespaces]]
+binding = "ORG_MEMORY"
+id = "05a8665d34b241feafd75576ef901b86"
+
+[[r2_buckets]]
+binding = "EVIDENCE_BUCKET"
+bucket_name = "ai-srf-evidence"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "AI_SRF_SENSING"
+database_id = "f47f018f-cb9f-4b8d-9f89-afa27cdbae50"
+
+[triggers]
+crons = ["0 */4 * * *"]

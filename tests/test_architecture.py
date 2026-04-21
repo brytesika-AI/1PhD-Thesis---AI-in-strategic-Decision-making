@@ -28,7 +28,7 @@ def policy(registry: AgentRegistry) -> PolicyEngine:
 
 
 def test_agent_registry_loads_all_ai_srf_agents(registry: AgentRegistry) -> None:
-    assert len(registry.agents) == 7
+    assert len(registry.agents) == 10
     assert [agent["id"] for agent in registry.list_agents()] == [
         "tracker",
         "induna",
@@ -40,6 +40,9 @@ def test_agent_registry_loads_all_ai_srf_agents(registry: AgentRegistry) -> None
     ]
     assert registry.get_agent("tracker")["role"] == "Environmental Monitor"
     assert registry.next_agent_id("tracker") == "induna"
+    assert registry.get_agent("decision_governor")["role"] == "Orchestration and Control"
+    assert registry.get_agent("consensus_tracker")["role"] == "Agreement and Tension State"
+    assert registry.get_agent("policy_sentinel")["role"] == "Governance Enforcement"
 
 
 def test_policy_enforces_allowed_tools_and_blocks_by_default(policy: PolicyEngine) -> None:

@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -21,7 +22,10 @@ class AgentRegistry:
             raise FileNotFoundError(f"Agent configuration file not found: {self.config_path}")
 
         with open(self.config_path, "r", encoding="utf-8") as file:
-            data = yaml.safe_load(file) or {}
+            if self.config_path.suffix.lower() == ".json":
+                data = json.load(file) or {}
+            else:
+                data = yaml.safe_load(file) or {}
             self.agents = data.get("agents", {})
         self._validate_config()
 
