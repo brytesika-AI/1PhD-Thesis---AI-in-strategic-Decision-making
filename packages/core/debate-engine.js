@@ -32,6 +32,12 @@ export class DebateEngine {
     caseState.rebuttals = [...(caseState.rebuttals || []), rebuttal];
     const objection = (caseState.objections || []).find((item) => item.id === objectionId);
     if (objection) objection.status = confidence >= 0.72 ? "answered" : "contested";
+    if (objection?.status === "answered") {
+      caseState.unresolved_tensions = (caseState.unresolved_tensions || []).filter((item) => item !== objection.claim);
+      if (caseState.consensus?.unresolved_tensions) {
+        caseState.consensus.unresolved_tensions = caseState.consensus.unresolved_tensions.filter((item) => item.text !== objection.claim);
+      }
+    }
     return rebuttal;
   }
 

@@ -23,7 +23,7 @@ export class OrchestrationGateway {
     this.hooks = new EventHooks({ auditLog, caseStore });
   }
 
-  async executeStage({ caseId, stage, userGoal, riskState = "ELEVATED", sector = "general" }) {
+  async executeStage({ caseId, stage, userGoal, riskState = "ELEVATED", sector = "general", user = null }) {
     const agent = getAgentForStage(this.registryDocument, stage);
     if (!agent) {
       return { error: "Invalid stage.", status: 400 };
@@ -32,10 +32,15 @@ export class OrchestrationGateway {
     let caseState = await this.caseStore.getCase(caseId);
     if (!caseState) {
       caseState = emptyCaseState(caseId, userGoal);
+      caseState.created_by = user?.user_id || null;
+      caseState.organization_id = user?.organization_id || null;
+      caseState.organization_name = user?.organization_name || null;
       await this.hooks.emit("audit_event", {
         event_type: "case_created",
         case_id: caseId,
         agent_id: "gateway",
+        user_id: user?.user_id || null,
+        action: "case_created",
         input_summary: String(userGoal).slice(0, 160),
         output_summary: "Decision case created by Cloudflare gateway control plane.",
         tools_used: [],
@@ -44,6 +49,7 @@ export class OrchestrationGateway {
         human_approval: false
       });
     }
+    caseState.last_modified_by = user?.user_id || caseState.last_modified_by || null;
 
     const pendingGate = [...caseState.approval_gates].reverse().find((gate) => gate.status === "pending");
     if (pendingGate && Number(stage) > Number(pendingGate.stage_id)) {

@@ -53,7 +53,7 @@ Decision Governor -> Consensus Tracker -> Policy Sentinel.
 
 Human-in-the-loop control is enforced as a first-class approval gate. Stages marked `requires_human_approval` in `config/agents.yaml` persist a pending approval record after execution. The orchestrator blocks downstream stages until the gate is approved through the workspace or `POST /api/runs/{case_id}/approvals/{approval_id}`.
 
-The strongest OpenClaw-style architectural ideas are translated into an enterprise governance platform: the gateway is the control plane, routing is explicit, skills are modular and policy-mediated, runtime behavior is config-driven, sessions are stateful but case-bounded, monitoring is event-hooked, and reasoning is surfaced through visible workspaces. The pi-agent-style runtime is implemented as an Agent -> decision loop -> tool execution -> state update -> event emission -> next action cycle with steering, follow-up, and debate queues. AI-SRF deliberately does not copy consumer assistant messaging sprawl or personal-assistant persona patterns.
+The strongest OpenClaw-style architectural ideas are translated into an enterprise governance platform: the gateway is the control plane, routing is explicit, skills are modular and policy-mediated, runtime behavior is config-driven, sessions are stateful but case-bounded, monitoring is event-hooked, and reasoning is surfaced through visible workspaces. The pi-agent-style runtime is implemented as an Agent -> decision loop -> tool execution -> state update -> event emission -> next action cycle with steering, follow-up, and debate queues. Queue enqueues/dequeues, objections, rebuttals, consensus updates, tool hooks, loop stops, and case closure are persisted as replayable D1 events. AI-SRF deliberately does not copy consumer assistant messaging sprawl or personal-assistant persona patterns.
 
 ### Sample Local Case Flow
 1. Start the API: `uvicorn app.api.main:app --reload --port 8000`.
@@ -61,7 +61,7 @@ The strongest OpenClaw-style architectural ideas are translated into an enterpri
 3. Enter a decision-case goal in the active stage panel.
 4. Approve or reject each mandatory human review gate before moving downstream.
 5. Inspect persisted case state under `workspace/cases`.
-6. Replay the audit trail through `GET /api/runs/{case_id}/replay` or the workspace audit panel.
+6. Replay the audit trail through `GET /api/cases/{case_id}/replay`, stream case events through `GET /api/cases/{case_id}/events`, or use the workspace audit panel.
 
 ### Sample Cloudflare Deployment Flow
 Cloudflare is the default production assumption.
@@ -74,6 +74,9 @@ Production state and audit records use Cloudflare D1. KV is used for lightweight
 
 Production loop entrypoint: `POST /api/loop`.
 Compatibility stage adapter: `POST /api/orchestrate`.
+Replay/event stream entrypoints: `GET /api/cases/{case_id}/replay` and `GET /api/cases/{case_id}/events`.
+
+Authentication is enforced by the Worker for API routes. The Pages workspace uses `POST /api/auth/login` to set a secure JWT cookie, then calls protected routes with credentials included. Case state stores `created_by`, `last_modified_by`, `organization_id`, and `organization_name`; case listing and replay are filtered by organization. Roles are enforced as: analyst can run cases, executive can view and approve, admin can manage policy/system routes. For production, set `AUTH_PASSCODE` and `JWT_SECRET` as Cloudflare Worker secrets.
 
 See `docs/CLOUDFLARE_FIRST_ARCHITECTURE.md` for the full Cloudflare-first runtime split and tradeoffs.
 

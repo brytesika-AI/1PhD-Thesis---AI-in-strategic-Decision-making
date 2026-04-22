@@ -1,6 +1,6 @@
 name = "ai-srf-governance-worker"
 main = "src/index.js"
-compatibility_date = "2026-04-21"
+compatibility_date = "2026-04-22"
 
 [observability]
 enabled = true
@@ -20,10 +20,6 @@ id = "062215de146a401e8171047434a582a9"
 [[kv_namespaces]]
 binding = "ORG_MEMORY"
 id = "05a8665d34b241feafd75576ef901b86"
-
-[[r2_buckets]]
-binding = "EVIDENCE_BUCKET"
-bucket_name = "ai-srf-evidence"
 
 [[d1_databases]]
 binding = "DB"

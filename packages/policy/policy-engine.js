@@ -49,6 +49,52 @@ export class PolicyEngine {
     };
   }
 
+  validateToolResult(agentId, toolName, result = {}) {
+    if (result.status === "blocked" || result.status === "error") {
+      return {
+        timestamp: new Date().toISOString(),
+        agent_id: agentId,
+        tool_name: toolName,
+        allowed: false,
+        reason: result.message || `Tool ${toolName} did not complete successfully.`
+      };
+    }
+    return {
+      timestamp: new Date().toISOString(),
+      agent_id: agentId,
+      tool_name: toolName,
+      allowed: true,
+      reason: "Tool result accepted by afterToolCall policy hook."
+    };
+  }
+
+  validateFinalPolicy(caseState = {}) {
+    const violations = caseState.policy_violations || [];
+    if (violations.length > 0) {
+      return {
+        allowed: false,
+        reason: "Final decision blocked because policy violations are present.",
+        violations
+      };
+    }
+    if (!caseState.verification_chain?.devil_advocate_validated) {
+      return {
+        allowed: false,
+        reason: "Final decision blocked until Devil's Advocate validation is complete."
+      };
+    }
+    if (!caseState.implementation_plan || Object.keys(caseState.implementation_plan).length === 0) {
+      return {
+        allowed: false,
+        reason: "Final decision blocked until implementation readiness is documented."
+      };
+    }
+    return {
+      allowed: true,
+      reason: "Final policy validation passed."
+    };
+  }
+
   requiresApproval(agentId) {
     return Boolean(this.registryDocument?.agents?.[agentId]?.requires_human_approval ?? true);
   }

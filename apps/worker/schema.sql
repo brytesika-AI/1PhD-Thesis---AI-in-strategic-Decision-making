@@ -42,3 +42,16 @@ CREATE TABLE IF NOT EXISTS decision_queue_items (
 
 CREATE INDEX IF NOT EXISTS idx_decision_queue_case_status
 ON decision_queue_items(case_id, status, queue_name);
+
+CREATE TABLE IF NOT EXISTS users (
+    user_id TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('analyst', 'executive', 'admin')),
+    organization_id TEXT NOT NULL,
+    organization_name TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_login_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_org
+ON users(organization_id, email);

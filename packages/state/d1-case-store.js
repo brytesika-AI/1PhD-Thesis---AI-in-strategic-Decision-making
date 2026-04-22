@@ -5,6 +5,10 @@ export function emptyCaseState(caseId, userGoal = "") {
     current_stage: 1,
     status: "active",
     user_goal: userGoal,
+    created_by: null,
+    last_modified_by: null,
+    organization_id: null,
+    organization_name: null,
     situational_briefing: {},
     evidence_bundle: {},
     assumptions: [],
@@ -13,6 +17,8 @@ export function emptyCaseState(caseId, userGoal = "") {
     objections: [],
     rebuttals: [],
     unresolved_tensions: [],
+    revisions: [],
+    policy_violations: [],
     consensus: {
       agreements: [],
       disagreements: [],
@@ -53,12 +59,15 @@ export class D1CaseStore {
     this.db = db;
   }
 
-  async getCase(caseId) {
+  async getCase(caseId, { organizationId = null } = {}) {
     const row = await this.db
       .prepare("SELECT payload FROM decision_cases WHERE case_id = ?")
       .bind(caseId)
       .first();
-    return row?.payload ? JSON.parse(row.payload) : null;
+    const caseState = row?.payload ? JSON.parse(row.payload) : null;
+    if (!caseState) return null;
+    if (organizationId && caseState.organization_id !== organizationId) return null;
+    return caseState;
   }
 
   async saveCase(caseState) {
@@ -86,11 +95,13 @@ export class D1CaseStore {
     return caseState;
   }
 
-  async listCases(limit = 20) {
+  async listCases(limit = 20, { organizationId = null } = {}) {
     const result = await this.db
       .prepare("SELECT payload FROM decision_cases ORDER BY updated_at DESC LIMIT ?")
-      .bind(limit)
+      .bind(Math.max(Number(limit || 20), 100))
       .all();
-    return (result.results || []).map((row) => JSON.parse(row.payload));
+    const cases = (result.results || []).map((row) => JSON.parse(row.payload));
+    const filtered = organizationId ? cases.filter((item) => item.organization_id === organizationId) : cases;
+    return filtered.slice(0, limit);
   }
 }

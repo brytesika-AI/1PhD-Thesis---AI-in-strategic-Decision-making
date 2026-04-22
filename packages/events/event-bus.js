@@ -5,6 +5,9 @@ export const EVENT_TYPES = new Set([
   "turn_end",
   "stage_start",
   "stage_end",
+  "state_update",
+  "state_updated",
+  "consensus_update",
   "tool_execution_start",
   "tool_execution_end",
   "objection_raised",
@@ -17,7 +20,8 @@ export const EVENT_TYPES = new Set([
   "monitoring_retrigger",
   "queue_enqueued",
   "queue_dequeued",
-  "loop_stopped"
+  "loop_stopped",
+  "system_error"
 ]);
 
 export class EventBus {
@@ -39,6 +43,8 @@ export class EventBus {
       model_used: payload.model_used || "event-system",
       policy_checks: payload.policy_checks || [],
       human_approval: Boolean(payload.human_approval),
+      user_id: payload.user_id || payload.raw_payload?.user_id || null,
+      action: payload.action || eventType,
       raw_payload: payload.raw_payload || payload
     });
   }

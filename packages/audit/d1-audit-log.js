@@ -17,7 +17,15 @@ export class D1AuditLog {
       model_used: event.model_used || "",
       policy_checks: event.policy_checks || [],
       human_approval: Boolean(event.human_approval),
-      raw_payload: event.raw_payload || {}
+      user_id: event.user_id || event.raw_payload?.user_id || null,
+      action: event.action || event.event_type || "audit_event",
+      raw_payload: {
+        ...(event.raw_payload || {}),
+        user_id: event.user_id || event.raw_payload?.user_id || null,
+        action: event.action || event.event_type || "audit_event",
+        agent: event.agent_id,
+        timestamp: event.timestamp || new Date().toISOString()
+      }
     };
 
     await this.db
@@ -55,6 +63,8 @@ export class D1AuditLog {
       tools_used: JSON.parse(row.tools_used || "[]"),
       policy_checks: JSON.parse(row.policy_checks || "[]"),
       raw_payload: JSON.parse(row.raw_payload || "{}"),
+      user_id: JSON.parse(row.raw_payload || "{}").user_id || null,
+      action: JSON.parse(row.raw_payload || "{}").action || row.event_type,
       human_approval: Boolean(row.human_approval)
     }));
   }

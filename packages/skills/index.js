@@ -157,40 +157,71 @@ export function listToolDefinitions() {
   return Object.values(toolSchemas);
 }
 
-export async function executeToolWithHooks({ agentId, toolName, input = {}, policy, eventBus, caseId }) {
+function validateToolInput(toolName, input = {}) {
+  if (!toolSchemas[toolName]) {
+    return { allowed: false, reason: `Tool ${toolName} is not registered.` };
+  }
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return { allowed: false, reason: "Tool input must be a JSON object." };
+  }
+  return { allowed: true, reason: "Tool input accepted." };
+}
+
+export async function beforeToolCall({ agentId, toolName, input = {}, policy, eventBus, caseId }) {
   const policyCheck = policy.buildToolPolicyCheck(agentId, toolName);
+  const inputCheck = validateToolInput(toolName, input);
+  const combinedCheck = {
+    ...policyCheck,
+    allowed: policyCheck.allowed && inputCheck.allowed,
+    reason: policyCheck.allowed ? inputCheck.reason : policyCheck.reason,
+    input_validation: inputCheck
+  };
   await eventBus?.emit("tool_execution_start", {
     case_id: caseId,
     agent_id: agentId,
     input_summary: `Tool requested: ${toolName}`,
-    output_summary: policyCheck.reason,
+    output_summary: combinedCheck.reason,
     tools_used: [toolName],
-    policy_checks: [policyCheck],
+    policy_checks: [combinedCheck],
     raw_payload: { tool_name: toolName, input_schema: toolSchemas[toolName]?.input_schema || null }
   });
 
-  if (!policyCheck.allowed) {
+  if (!combinedCheck.allowed) {
     await eventBus?.emit("policy_violation_detected", {
       case_id: caseId,
       agent_id: "policy_sentinel",
       input_summary: `Blocked tool: ${toolName}`,
-      output_summary: policyCheck.reason,
+      output_summary: combinedCheck.reason,
       tools_used: [],
-      policy_checks: [policyCheck],
-      raw_payload: policyCheck
+      policy_checks: [combinedCheck],
+      raw_payload: combinedCheck
     });
-    return { status: "blocked", policy_check: policyCheck };
   }
+  return combinedCheck;
+}
 
-  const result = invokeSkill(toolName, input);
+export async function afterToolCall({ agentId, toolName, result = {}, policy, policyCheck, eventBus, caseId }) {
+  const afterCheck = policy.validateToolResult(agentId, toolName, result);
+  const checks = [policyCheck, afterCheck].filter(Boolean);
+
   await eventBus?.emit("tool_execution_end", {
     case_id: caseId,
     agent_id: agentId,
     input_summary: `Tool completed: ${toolName}`,
     output_summary: JSON.stringify(result).slice(0, 240),
     tools_used: [toolName],
-    policy_checks: [policyCheck],
+    policy_checks: checks,
     raw_payload: result
   });
-  return { ...result, policy_check: policyCheck };
+  return { ...result, policy_check: policyCheck, after_policy_check: afterCheck };
+}
+
+export async function executeToolWithHooks({ agentId, toolName, input = {}, policy, eventBus, caseId }) {
+  const policyCheck = await beforeToolCall({ agentId, toolName, input, policy, eventBus, caseId });
+  if (!policyCheck.allowed) {
+    return { status: "blocked", policy_check: policyCheck };
+  }
+
+  const result = invokeSkill(toolName, input);
+  return afterToolCall({ agentId, toolName, result, policy, policyCheck, eventBus, caseId });
 }

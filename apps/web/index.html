@@ -4,84 +4,411 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AI-SRF Strategic Decision OS</title>
-  <meta name="description" content="Cloudflare Pages workspace for governed AI-SRF strategic decision support.">
+  <meta name="description" content="AI-SRF executive strategic resilience workspace.">
   <style>
     :root {
-      --ink: #171717;
-      --bg: #f6f3ee;
-      --panel: #ffffff;
-      --line: #d8d0c4;
-      --muted: #6e675f;
-      --accent: #8b2500;
-      --amber: #b9792a;
-      --green: #285f48;
-      --blue: #1f4f6e;
+      --header: #0D1F33;
+      --ochre: #C8922A;
+      --terracotta: #A8401E;
+      --green: #2A6645;
+      --ink: #111821;
+      --muted: #64707d;
+      --line: #dce2e8;
+      --bg: #f6f8fa;
+      --surface: #ffffff;
     }
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--ink); font-family: Georgia, "Times New Roman", serif; }
-    header { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 18px 24px; border-bottom: 1px solid var(--line); background: var(--panel); }
-    h1 { margin: 0; font-size: 24px; letter-spacing: .2px; }
-    .sub { color: var(--muted); font: 12px Arial, sans-serif; text-transform: uppercase; letter-spacing: .08em; }
-    .pipeline { display: grid; grid-template-columns: repeat(7, minmax(120px, 1fr)); gap: 8px; padding: 12px 24px; overflow-x: auto; border-bottom: 1px solid var(--line); }
-    .stage { min-height: 58px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: var(--panel); }
-    .stage strong { display: block; font: 700 12px Arial, sans-serif; color: var(--accent); }
-    .stage span { display: block; margin-top: 4px; font-size: 13px; color: var(--muted); }
-    main { display: grid; grid-template-columns: minmax(340px, 1.1fr) minmax(320px, .9fr); gap: 1px; min-height: calc(100vh - 146px); background: var(--line); }
-    section { background: var(--panel); padding: 20px; overflow: auto; }
-    .workspace { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 12px; align-content: start; }
-    .panel { border: 1px solid var(--line); border-radius: 8px; padding: 14px; background: #fffdf9; min-height: 130px; }
-    .panel h2 { margin: 0 0 8px; font-size: 17px; color: var(--blue); }
-    .panel p, .panel li { color: var(--muted); line-height: 1.45; font-size: 14px; }
-    label { display: block; margin: 12px 0 6px; font: 700 12px Arial, sans-serif; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-    textarea, input, select { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 10px; font: 15px Georgia, serif; background: #fffdf9; }
-    textarea { min-height: 120px; resize: vertical; }
-    button { margin-top: 12px; border: 0; border-radius: 8px; padding: 11px 14px; background: var(--accent); color: white; font: 700 13px Arial, sans-serif; cursor: pointer; }
-    pre { white-space: pre-wrap; word-break: break-word; font: 12px Consolas, monospace; background: #171717; color: #f6f3ee; padding: 12px; border-radius: 8px; min-height: 160px; }
-    @media (max-width: 900px) {
-      main, .workspace { grid-template-columns: 1fr; }
-      header { align-items: flex-start; flex-direction: column; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, "IBM Plex Sans", Arial, sans-serif;
+      letter-spacing: 0;
+    }
+    .pattern {
+      height: 14px;
+      width: 100%;
+      background:
+        linear-gradient(135deg, transparent 25%, var(--ochre) 25% 50%, transparent 50% 75%, var(--terracotta) 75%) 0 0 / 28px 14px,
+        linear-gradient(225deg, transparent 25%, var(--terracotta) 25% 50%, transparent 50% 75%, var(--ochre) 75%) 14px 0 / 28px 14px;
+    }
+    header {
+      min-height: 82px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 18px;
+      align-items: center;
+      padding: 18px 24px;
+      background: var(--header);
+      color: #ffffff;
+    }
+    .wordmark {
+      font-size: 28px;
+      font-weight: 850;
+      line-height: 1;
+    }
+    .subtitle {
+      margin-top: 7px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      opacity: .6;
+    }
+    .identity {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      font-size: 12px;
+    }
+    .identity span, .identity button {
+      min-height: 30px;
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 8px;
+      padding: 7px 10px;
+      background: transparent;
+      color: #ffffff;
+      font: inherit;
+    }
+    .identity button { cursor: pointer; }
+    .stepper {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(132px, 1fr));
+      gap: 1px;
+      background: var(--line);
+      overflow-x: auto;
+    }
+    .step {
+      min-height: 68px;
+      padding: 10px 12px;
+      background: var(--surface);
+      border-top: 4px solid transparent;
+    }
+    .step strong { display: block; font-size: 12px; }
+    .step span { display: block; margin-top: 5px; font-size: 12px; color: var(--muted); }
+    .step.active {
+      border-top-color: var(--ochre);
+      box-shadow: inset 0 0 0 1px rgba(200,146,42,.45), 0 0 18px rgba(200,146,42,.22);
+    }
+    .step.done { border-top-color: var(--green); }
+    .step.risk { border-top-color: var(--terracotta); }
+    .devil-tag {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 4;
+      border-radius: 8px;
+      padding: 9px 12px;
+      background: var(--terracotta);
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 800;
+      box-shadow: 0 10px 30px rgba(168,64,30,.24);
+    }
+    main {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-height: calc(100vh - 178px);
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: 1.35fr 1fr 1fr 1fr;
+      gap: 1px;
+      background: var(--line);
+    }
+    .metric {
+      min-height: 126px;
+      padding: 18px;
+      background: var(--surface);
+    }
+    .metric h2, .panel h2, label {
+      margin: 0 0 10px;
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      font-weight: 800;
+    }
+    .metric .value {
+      font-size: 31px;
+      font-weight: 850;
+      line-height: 1.05;
+    }
+    .metric.primary .value { font-size: 44px; color: var(--terracotta); }
+    .metric small {
+      display: block;
+      max-width: 320px;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.3;
+    }
+    .workspace {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 1px;
+      background: var(--line);
+    }
+    aside, .panel {
+      background: var(--surface);
+      padding: 18px;
+    }
+    .panel-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(220px, 1fr));
+      gap: 1px;
+      background: var(--line);
+    }
+    .panel.wide { grid-column: span 2; }
+    .board-brief {
+      border-left: 5px solid var(--ochre);
+      min-height: 140px;
+    }
+    .brief-verdict {
+      max-width: 920px;
+      font-size: 22px;
+      font-weight: 800;
+      line-height: 1.25;
+    }
+    input, textarea, select {
+      width: 100%;
+      margin-bottom: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #ffffff;
+      color: var(--ink);
+      font: 14px Inter, "IBM Plex Sans", Arial, sans-serif;
+    }
+    textarea { min-height: 148px; resize: vertical; }
+    button.command, button.primary {
+      min-height: 42px;
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: var(--header);
+      color: #ffffff;
+      font: 800 13px Inter, "IBM Plex Sans", Arial, sans-serif;
+      cursor: pointer;
+    }
+    button.primary { width: 100%; background: var(--ochre); color: #111821; }
+    button.run-primary {
+      width: 100%;
+      min-height: 46px;
+      margin-top: 16px;
+      border: 0;
+      border-radius: 8px;
+      padding: 12px 14px;
+      background: var(--ochre);
+      color: #111821;
+      font: 850 14px Inter, "IBM Plex Sans", Arial, sans-serif;
+      cursor: pointer;
+    }
+    button.run-primary:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      margin-right: 8px;
+      border: 2px solid rgba(17,24,33,.3);
+      border-top-color: #111821;
+      border-radius: 50%;
+      vertical-align: -2px;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    button.danger { background: var(--terracotta); color: #ffffff; }
+    button.success { background: var(--green); color: #ffffff; }
+    button.command.primary-command { background: var(--ochre); color: #111821; }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font: 12px "IBM Plex Mono", Consolas, monospace;
+      color: var(--ink);
+    }
+    .trace {
+      max-height: 330px;
+      overflow: auto;
+      border-radius: 8px;
+      padding: 12px;
+      background: #101820;
+      color: #edf2f7;
+    }
+    .commands {
+      border-top: 1px solid var(--line);
+      background: var(--surface);
+      padding: 16px 18px;
+    }
+    .caption {
+      margin-bottom: 12px;
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .command-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(160px, 1fr));
+      gap: 8px;
+    }
+    .login-screen {
+      min-height: calc(100vh - 110px);
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      background: var(--bg);
+    }
+    .login-card {
+      width: min(440px, 100%);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-top: 5px solid var(--ochre);
+      border-radius: 8px;
+      padding: 24px;
+    }
+    .hidden { display: none; }
+    @media (max-width: 1180px) {
+      .metrics, .workspace, .panel-grid { grid-template-columns: 1fr; }
+      .panel.wide { grid-column: span 1; }
+      .command-row { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 680px) {
+      header { grid-template-columns: 1fr; }
+      .identity { justify-content: flex-start; }
+      .command-row { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
+  <div class="pattern"></div>
   <header>
     <div>
-      <h1>AI-SRF Strategic Decision OS</h1>
-      <div class="sub">Gateway control plane · Agent loop · Debate · Consensus · Cloudflare production target</div>
+      <div class="wordmark">AI·SRF</div>
+      <div class="subtitle">Strategic Resilience Framework</div>
     </div>
-    <div class="sub">Monitoring Agent: active watch section</div>
+    <div class="identity">
+      <span id="userName">Not signed in</span>
+      <span id="orgName">No organization</span>
+      <button id="logoutButton" type="button">Logout</button>
+    </div>
   </header>
+  <div class="pattern"></div>
 
-  <nav class="pipeline" id="pipeline"></nav>
+  <section id="loginScreen" class="login-screen">
+    <form id="loginForm" class="login-card">
+      <h1 class="wordmark" style="color: var(--header);">AI·SRF</h1>
+      <p class="subtitle" style="color: var(--header); opacity: .6;">Strategic Resilience Framework</p>
+      <label for="apiBaseLogin">Worker API</label>
+      <input id="apiBaseLogin" value="https://ai-srf-governance-worker.bryte-sika.workers.dev">
+      <label for="email">Email</label>
+      <input id="email" type="email" value="analyst@board.example">
+      <label for="role">Role</label>
+      <select id="role">
+        <option value="analyst">analyst</option>
+        <option value="executive">executive</option>
+        <option value="admin">admin</option>
+      </select>
+      <label for="organizationId">Organization ID</label>
+      <input id="organizationId" value="board-alpha">
+      <label for="organizationName">Organization Name</label>
+      <input id="organizationName" value="Board Alpha">
+      <label for="passcode">Access Passcode</label>
+      <input id="passcode" type="password" placeholder="Enter passcode">
+      <button class="primary" type="submit">Login</button>
+    </form>
+  </section>
 
-  <main>
-    <section>
-      <form id="caseForm">
-        <label for="workerUrl">Worker API</label>
-        <input id="workerUrl" value="https://ai-srf-governance-worker.bryte-sika.workers.dev">
-        <label for="goal">Decision case goal</label>
-        <textarea id="goal">Assess a governed digital transformation decision under South African infrastructure and regulatory risk.</textarea>
-        <label for="stage">Current stage</label>
-        <select id="stage"></select>
-        <button type="submit">Run Decision Loop</button>
-      </form>
-      <pre id="output">Awaiting governed decision-loop execution.</pre>
-    </section>
+  <section id="appShell" class="hidden">
+    <nav class="stepper" id="stepper"></nav>
 
-    <section class="workspace">
-      <div class="panel"><h2>Situational Briefing</h2><p id="briefing">No briefing captured yet.</p></div>
-      <div class="panel"><h2>Current Stage</h2><p id="currentStage">Stage 1: Environmental Monitor.</p></div>
-      <div class="panel"><h2>Evidence</h2><p id="evidence">Evidence bundle will appear after Tracker and Auditor stages.</p></div>
-      <div class="panel"><h2>Assumptions</h2><p id="assumptions">Assumption register awaits Socratic Partner output.</p></div>
-      <div class="panel"><h2>Options</h2><p id="options">Strategic options await Creative Catalyst output.</p></div>
-      <div class="panel"><h2>Stress Tests</h2><p id="stress">Devil's Advocate findings will appear here.</p></div>
-      <div class="panel"><h2>Strongest Objection</h2><p id="objection">No formal objection raised.</p></div>
-      <div class="panel"><h2>Consensus Level</h2><p id="consensus">Consensus has not been computed.</p></div>
-      <div class="panel"><h2>Implementation Roadmap</h2><p id="roadmap">Roadmap awaits Implementation Scaffolding.</p></div>
-      <div class="panel"><h2>Implementation Readiness</h2><p id="readiness">Not ready until verification chain is satisfied.</p></div>
-      <div class="panel"><h2>Audit Trace</h2><p id="audit">Every stage execution writes to D1 audit_events in production.</p></div>
-    </section>
-  </main>
+    <main>
+      <section class="metrics">
+        <div class="metric primary">
+          <h2>Risk State</h2>
+          <div class="value" id="riskState">ELEVATED</div>
+          <small id="riskNote">Board-level risk posture</small>
+        </div>
+        <div class="metric">
+          <h2>Consensus Level</h2>
+          <div class="value" id="consensusLevel">Unknown</div>
+          <small id="consensusNote">Awaiting governed cycle</small>
+        </div>
+        <div class="metric">
+          <h2>Strongest Objection</h2>
+          <div class="value" id="strongestObjection">None</div>
+          <small>Challenge function active</small>
+        </div>
+        <div class="metric">
+          <h2>Implementation Readiness</h2>
+          <div class="value" id="readiness">Not Ready</div>
+          <small id="readinessNote">Verification chain incomplete</small>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <aside>
+          <label for="apiBase">Worker API</label>
+          <input id="apiBase" value="https://ai-srf-governance-worker.bryte-sika.workers.dev">
+          <label for="goal">Decision Case</label>
+          <textarea id="goal">The board of a South African financial services company must decide whether to migrate customer analytics workloads to a cloud AI platform while facing load-shedding risk, POPIA compliance obligations, vendor lock-in concerns, and pressure to improve decision speed before the next reporting cycle.</textarea>
+          <label for="stage">Entry Stage</label>
+          <select id="stage"></select>
+        </aside>
+
+        <div class="panel-grid">
+          <section class="panel wide board-brief">
+            <h2>Board Brief</h2>
+            <div class="brief-verdict" id="boardBrief">No verdict yet. Run a governed decision cycle.</div>
+            <button class="run-primary" id="runGovernedCycle" type="button">Run Governed Decision Cycle</button>
+          </section>
+          <section class="panel">
+            <h2>Devil's Advocate</h2>
+            <pre id="devil">Challenge function active</pre>
+          </section>
+          <section class="panel">
+            <h2>Evidence</h2>
+            <pre id="evidence">No evidence recorded.</pre>
+          </section>
+          <section class="panel">
+            <h2>Assumptions</h2>
+            <pre id="assumptions">No assumptions recorded.</pre>
+          </section>
+          <section class="panel">
+            <h2>Options</h2>
+            <pre id="options">No options generated.</pre>
+          </section>
+          <section class="panel">
+            <h2>Monitoring</h2>
+            <pre id="monitoring">No monitoring rules.</pre>
+          </section>
+          <section class="panel wide">
+            <h2>Implementation Roadmap</h2>
+            <pre id="roadmap">No roadmap generated.</pre>
+          </section>
+          <section class="panel wide">
+            <h2>Audit Trace</h2>
+            <pre class="trace" id="audit">No audit events loaded.</pre>
+          </section>
+        </div>
+      </section>
+
+      <section class="commands">
+        <div class="caption">This framework does not help. It governs.</div>
+        <div class="command-row">
+          <button class="command primary-command" id="runFull" type="button">Run full decision cycle</button>
+          <button class="command danger" id="stressTest" type="button">Stress test decision</button>
+          <button class="command danger" id="challengeAssumptions" type="button">Challenge assumptions</button>
+          <button class="command" id="reopenCase" type="button">Re-open case</button>
+        </div>
+      </section>
+    </main>
+  </section>
+  <div class="devil-tag">Challenge function active</div>
+  <div class="pattern"></div>
 
   <script>
     const stages = [
@@ -93,49 +420,260 @@
       ["architect", "Implementation Scaffolding"],
       ["guardian", "Monitoring Agent"]
     ];
-    const pipeline = document.getElementById("pipeline");
-    const stageSelect = document.getElementById("stage");
+    let activeUser = null;
+    let activeCase = null;
+    let lastState = null;
+    const API_BASE = "https://ai-srf-governance-worker.bryte-sika.workers.dev";
+
+    const apiInput = document.getElementById("apiBase");
+    const apiLogin = document.getElementById("apiBaseLogin");
+    apiInput.value = API_BASE;
+    apiLogin.value = API_BASE;
+
+    function apiBase() {
+      return API_BASE;
+    }
+
+    function canRun() {
+      return activeUser?.role === "analyst" || activeUser?.role === "admin";
+    }
+
+    function applyRoleGates() {
+      const allowed = canRun();
+      const runButton = document.getElementById("runGovernedCycle");
+      runButton.disabled = !allowed;
+      runButton.title = allowed ? "Run governed decision cycle" : "Executive role is view-only for execution.";
+      document.getElementById("runFull").disabled = !allowed;
+      document.getElementById("stressTest").disabled = !allowed;
+      document.getElementById("challengeAssumptions").disabled = !allowed;
+      document.getElementById("reopenCase").disabled = !allowed;
+    }
+
+    function renderStepper(currentStage = 1, hasRisk = false) {
+      const stepper = document.getElementById("stepper");
+      stepper.innerHTML = "";
+      stages.forEach(([id, label], index) => {
+        const stageNo = index + 1;
+        const item = document.createElement("div");
+        item.className = `step ${stageNo === Number(currentStage) ? "active" : ""} ${stageNo < Number(currentStage) ? "done" : ""} ${hasRisk && id === "challenger" ? "risk" : ""}`;
+        item.innerHTML = `<strong>${stageNo}. ${id}</strong><span>${label}</span>`;
+        stepper.appendChild(item);
+      });
+    }
+
     stages.forEach(([id, label], index) => {
-      const item = document.createElement("div");
-      item.className = "stage";
-      item.innerHTML = `<strong>${index + 1}. ${id}</strong><span>${label}</span>`;
-      pipeline.appendChild(item);
       const option = document.createElement("option");
       option.value = String(index + 1);
       option.textContent = `${index + 1}. ${label}`;
-      stageSelect.appendChild(option);
+      document.getElementById("stage").appendChild(option);
+    });
+    renderStepper(1);
+
+    function pretty(value, emptyText) {
+      if (value === undefined || value === null) return emptyText;
+      if (Array.isArray(value) && value.length === 0) return emptyText;
+      if (typeof value === "object" && Object.keys(value).length === 0) return emptyText;
+      return typeof value === "string" ? value : JSON.stringify(value, null, 2);
+    }
+
+    async function fetchJson(path, options = {}) {
+      const url = `${apiBase()}${path}`;
+      const response = await fetch(url, {
+        ...options,
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) }
+      });
+      const text = await response.text();
+      let payload = {};
+      try {
+        payload = text ? JSON.parse(text) : {};
+      } catch {
+        throw new Error(`HTTP ${response.status}: API returned non-JSON.`);
+      }
+      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+      return payload;
+    }
+
+    async function loadMe() {
+      try {
+        const result = await fetchJson("/api/auth/me", { method: "GET" });
+        activeUser = result.user;
+        document.getElementById("userName").textContent = `${activeUser.email} (${activeUser.role})`;
+        document.getElementById("orgName").textContent = activeUser.organization_name || activeUser.organization_id;
+        document.getElementById("loginScreen").classList.add("hidden");
+        document.getElementById("appShell").classList.remove("hidden");
+        applyRoleGates();
+      } catch {
+        document.getElementById("loginScreen").classList.remove("hidden");
+        document.getElementById("appShell").classList.add("hidden");
+      }
+    }
+
+    document.getElementById("loginForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      apiInput.value = apiLogin.value;
+      const body = {
+        email: document.getElementById("email").value,
+        role: document.getElementById("role").value,
+        organization_id: document.getElementById("organizationId").value,
+        organization_name: document.getElementById("organizationName").value,
+        passcode: document.getElementById("passcode").value
+      };
+      await fetchJson("/api/auth/login", { method: "POST", body: JSON.stringify(body) });
+      await loadMe();
     });
 
-    document.getElementById("caseForm").addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const api = document.getElementById("workerUrl").value.replace(/\/$/, "");
+    document.getElementById("logoutButton").addEventListener("click", async () => {
+      await fetchJson("/api/auth/logout", { method: "POST", body: "{}" }).catch(() => null);
+      activeUser = null;
+      activeCase = null;
+      lastState = null;
+      document.getElementById("loginScreen").classList.remove("hidden");
+      document.getElementById("appShell").classList.add("hidden");
+    });
+
+    async function runCycle(command) {
+      const suffix = command === "stress" ? "\n\nStress test the current decision with Devil's Advocate scrutiny." :
+        command === "challenge" ? "\n\nChallenge the assumptions and force forensic re-evaluation." : "";
       const body = {
-        case_id: sessionStorage.getItem("ai_srf_case_id") || crypto.randomUUID(),
+        case_id: activeCase || crypto.randomUUID(),
         stage: Number(document.getElementById("stage").value),
+        user_goal: document.getElementById("goal").value + suffix,
+        risk_state: "ELEVATED",
+        sector: "financial_services",
+        max_iterations: command === "full" ? 14 : 6
+      };
+      activeCase = body.case_id;
+      const result = await fetchJson("/api/loop", { method: "POST", body: JSON.stringify(body) });
+      lastState = result.case_state || {};
+      renderState(lastState);
+      await loadEvents(activeCase);
+    }
+
+    function commandPayload(extra = {}) {
+      const caseId = activeCase || crypto.randomUUID();
+      activeCase = caseId;
+      return {
+        case_id: caseId,
+        entry_stage: Number(document.getElementById("stage").value),
         user_goal: document.getElementById("goal").value,
         risk_state: "ELEVATED",
-        sector: "financial_services"
+        sector: "financial_services",
+        ...extra
       };
-      sessionStorage.setItem("ai_srf_case_id", body.case_id);
-      const result = await fetch(`${api}/api/loop`, {
+    }
+
+    async function executeCommand(endpoint, buttonId, label, extra = {}) {
+      const button = document.getElementById(buttonId);
+      if (!canRun()) return;
+      button.disabled = true;
+      button.innerHTML = `<span class="spinner"></span>${label}`;
+      try {
+        const result = await fetchJson(endpoint, {
+          method: "POST",
+          body: JSON.stringify(commandPayload(extra))
+        });
+        lastState = result.case_state || lastState || {};
+        renderState(lastState);
+        await loadEvents(activeCase);
+      } catch (error) {
+        if (String(error.message).includes("401")) {
+          activeUser = null;
+          document.getElementById("loginScreen").classList.remove("hidden");
+          document.getElementById("appShell").classList.add("hidden");
+          return;
+        }
+        document.getElementById("audit").textContent = "Execution failed — see audit trace";
+      } finally {
+        button.textContent = label;
+        applyRoleGates();
+      }
+    }
+
+    async function runGovernedDecisionCycle() {
+      const button = document.getElementById("runGovernedCycle");
+      if (!canRun()) return;
+      button.disabled = true;
+      button.innerHTML = '<span class="spinner"></span>Running governed cycle';
+      const caseId = activeCase || crypto.randomUUID();
+      activeCase = caseId;
+      const payload = {
+        case_id: caseId,
+        entry_stage: Number(document.getElementById("stage").value)
+      };
+      console.log("Running decision loop", payload);
+      try {
+        const result = await fetchJson("/api/decision/run", {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+        lastState = result.case_state || {};
+        renderState(lastState);
+        await loadEvents(activeCase);
+      } catch (error) {
+        if (String(error.message).includes("401")) {
+          activeUser = null;
+          document.getElementById("loginScreen").classList.remove("hidden");
+          document.getElementById("appShell").classList.add("hidden");
+          return;
+        }
+        document.getElementById("audit").textContent = "Execution failed — see audit trace";
+      } finally {
+        button.innerHTML = "Run Governed Decision Cycle";
+        applyRoleGates();
+      }
+    }
+
+    function renderState(state) {
+      const objection = (state.objections || [])[0];
+      const verification = state.verification_chain || {};
+      const ready = verification.devil_advocate_validated && verification.policy_sentinel_validated && verification.consensus_tracker_confirmed;
+      document.getElementById("riskState").textContent = state.loop?.risk_state || "ELEVATED";
+      document.getElementById("riskNote").textContent = state.status || "active case";
+      document.getElementById("consensusLevel").textContent = state.consensus?.level || "Unknown";
+      document.getElementById("consensusNote").textContent = state.consensus?.final_rationale || "No final rationale.";
+      document.getElementById("strongestObjection").textContent = objection?.severity ? objection.severity.toUpperCase() : (objection ? "OPEN" : "None");
+      document.getElementById("readiness").textContent = ready ? "Ready" : "Not Ready";
+      document.getElementById("readinessNote").textContent = pretty(verification, "Verification chain incomplete");
+      document.getElementById("boardBrief").textContent = (state.decision?.rationale || state.consensus?.final_rationale || "No verdict yet. Run a governed decision cycle.").slice(0, 260);
+      document.getElementById("devil").textContent = pretty(objection || state.devil_advocate_findings, "Challenge function active");
+      document.getElementById("evidence").textContent = pretty(state.evidence_bundle, "No evidence recorded.");
+      document.getElementById("assumptions").textContent = pretty(state.assumptions, "No assumptions recorded.");
+      document.getElementById("options").textContent = pretty(state.options || state.options_generated, "No options generated.");
+      document.getElementById("monitoring").textContent = pretty({ risk_signals: state.risk_signals, monitoring_rules: state.monitoring_rules, alert_thresholds: state.alert_thresholds }, "No monitoring rules.");
+      document.getElementById("roadmap").textContent = pretty(state.implementation_plan, "No roadmap generated.");
+      renderStepper(state.current_stage || 1, Boolean(objection));
+    }
+
+    async function loadEvents(caseId) {
+      const result = await fetchJson(`/api/cases/${encodeURIComponent(caseId)}/events`, { method: "GET" });
+      document.getElementById("audit").textContent = (result.events || []).map((event) => {
+        return `${event.timestamp || ""}  ${event.action || event.event_type}  ${event.agent_id || ""}  ${event.user_id || ""}\n${event.output_summary || event.input_summary || ""}`;
+      }).join("\n\n") || "No audit events loaded.";
+    }
+
+    async function decideApproval(approved) {
+      const gate = [...(lastState?.approval_gates || [])].reverse().find((item) => item.status === "pending");
+      if (!activeCase || !gate) {
+        document.getElementById("audit").textContent = "No pending approval gate is available for this case.";
+        return;
+      }
+      const result = await fetchJson(`/api/cases/${encodeURIComponent(activeCase)}/approvals/${encodeURIComponent(gate.approval_id)}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...body, max_iterations: 12 })
-      }).then((response) => response.json());
-      document.getElementById("output").textContent = JSON.stringify(result, null, 2);
-      const state = result.case_state || {};
-      document.getElementById("currentStage").textContent = `Stage ${state.current_stage || body.stage}: ${state.loop?.last_agent_id || "decision_governor"}`;
-      document.getElementById("briefing").textContent = JSON.stringify(state.situational_briefing || {}, null, 2);
-      document.getElementById("evidence").textContent = JSON.stringify(state.evidence_bundle || {}, null, 2);
-      document.getElementById("assumptions").textContent = (state.assumptions || []).join("\n") || "No assumptions yet.";
-      document.getElementById("options").textContent = JSON.stringify(state.options || state.options_generated || [], null, 2);
-      document.getElementById("stress").textContent = JSON.stringify(state.devil_advocate_findings || {}, null, 2);
-      document.getElementById("objection").textContent = JSON.stringify((state.objections || [])[0] || {}, null, 2);
-      document.getElementById("consensus").textContent = JSON.stringify(state.consensus || {}, null, 2);
-      document.getElementById("roadmap").textContent = JSON.stringify(state.implementation_plan || {}, null, 2);
-      document.getElementById("readiness").textContent = JSON.stringify(state.verification_chain || {}, null, 2);
-      document.getElementById("audit").textContent = (state.audit_log_refs || state.audit_refs || []).join("\n") || "No audit references yet.";
-    });
+        body: JSON.stringify({ approved, notes: approved ? "Approved from executive workspace." : "Rejected from executive workspace." })
+      });
+      lastState = result.case_state || lastState;
+      renderState(lastState);
+      await loadEvents(activeCase);
+    }
+
+    document.getElementById("runFull").addEventListener("click", () => executeCommand("/api/decision/run", "runFull", "Run full decision cycle", { max_iterations: 10 }));
+    document.getElementById("runGovernedCycle").addEventListener("click", () => runGovernedDecisionCycle());
+    document.getElementById("stressTest").addEventListener("click", () => executeCommand("/api/decision/stress-test", "stressTest", "Stress test decision", { max_iterations: 8 }));
+    document.getElementById("challengeAssumptions").addEventListener("click", () => executeCommand("/api/decision/challenge-assumptions", "challengeAssumptions", "Challenge assumptions", { max_iterations: 8 }));
+    document.getElementById("reopenCase").addEventListener("click", () => executeCommand("/api/decision/reopen", "reopenCase", "Re-open case"));
+
+    loadMe();
   </script>
 </body>
 </html>

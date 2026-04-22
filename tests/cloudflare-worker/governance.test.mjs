@@ -7,6 +7,7 @@ import { DecisionLoop } from "../../packages/loop/decision-loop.js";
 import { PolicyEngine } from "../../packages/policy/policy-engine.js";
 import { getAgentForStage, listAgents } from "../../packages/shared/agent-registry.js";
 import { D1CaseStore, emptyCaseState } from "../../packages/state/d1-case-store.js";
+import worker from "../../apps/worker/src/index.js";
 import { agentRegistry } from "../../apps/worker/src/config/agents.js";
 
 const requiredFields = [
@@ -212,9 +213,11 @@ test("stateful decision loop emits events, executes tools, and reaches a governe
     '{"finding":"Assumptions mapped.","assumptions":["Cloud exit plan exists."],"tools_used":["five_whys"],"confidence":0.76}',
     '{"finding":"Evidence verified.","evidence":{"policy":"King IV"},"tools_used":["resilience_scoring"],"confidence":0.78}',
     '{"finding":"Options generated.","options":[{"id":"A","name":"Governed migration"}],"tools_used":["scenario_planning"],"confidence":0.74}',
-    '{"finding":"Challenge passed.","stress_tests":[],"confidence":0.8}',
+    '{"finding":"Challenge raised.","objection":"Cloud exit plan may fail during infrastructure stress.","stress_tests":[{"risk":"Cloud exit plan may fail during infrastructure stress."}],"verdict":"Proceed only with fallback controls.","tools_used":["swot_analysis"],"confidence":0.8}',
+    '{"finding":"Forensic rebuttal added.","evidence":{"fallback_control":"edge failover"},"rebuttal":"Fallback controls reduce the exit-plan risk.","tools_used":["resilience_scoring"],"confidence":0.81}',
     '{"finding":"Roadmap ready.","implementation_plan":{"phase_1":"Controls"},"tools_used":["implementation_plan_builder"],"confidence":0.82}',
-    '{"finding":"Policy clear.","confirmed":true,"confidence":0.9}',
+    '{"finding":"Monitoring rules ready.","risk_signals":[{"name":"decision_drift","level":"medium"}],"monitoring_rules":[{"metric":"decision_drift","threshold":"medium"}],"alert_thresholds":[{"metric":"decision_drift","red":"high"}],"tools_used":["resilience_scoring"],"confidence":0.84}',
+    '{"finding":"Policy clear.","confirmed":true,"tools_used":["policy_compliance_scan"],"confidence":0.9}',
     '{"finding":"Consensus confirmed.","confirmed":true,"final_rationale":"Proceed with governed rollout.","confidence":0.88}'
   ]);
   const loop = new DecisionLoop({ registryDocument: agentRegistry, caseStore, auditLog, ai, maxIterations: 10 });
@@ -233,6 +236,8 @@ test("stateful decision loop emits events, executes tools, and reaches a governe
   assert.equal(result.case_state.verification_chain.consensus_tracker_confirmed, true);
   assert.ok(replay.events.some((event) => event.event_type === "agent_start"));
   assert.ok(replay.events.some((event) => event.event_type === "tool_execution_start"));
+  assert.ok(replay.events.some((event) => event.event_type === "queue_enqueued"));
+  assert.ok(replay.events.some((event) => event.event_type === "consensus_updated"));
   assert.ok(replay.events.some((event) => event.event_type === "case_closed"));
 });
 
@@ -245,10 +250,11 @@ test("decision loop routes Devil's Advocate objections through debate queue", as
     '{"finding":"Assumptions mapped.","assumptions":["Vendor SLA is resilient."],"tools_used":["five_whys"],"confidence":0.72}',
     '{"finding":"Evidence verified.","evidence":{"sla":"weak"},"tools_used":["resilience_scoring"],"confidence":0.72}',
     '{"finding":"Options generated.","options":[{"id":"A"}],"tools_used":["scenario_planning"],"confidence":0.71}',
-    '{"finding":"Challenge raised.","objection":"Vendor SLA fails under load-shedding.","stress_tests":[{"risk":"Vendor SLA fails under load-shedding."}],"confidence":0.7}',
-    '{"finding":"Forensic rebuttal added.","rebuttal":"Mitigation requires edge fallback.","tools_used":["resilience_scoring"],"confidence":0.8}',
+    '{"finding":"Challenge raised.","objection":"Vendor SLA fails under load-shedding.","stress_tests":[{"risk":"Vendor SLA fails under load-shedding."}],"verdict":"Proceed only with edge fallback.","tools_used":["swot_analysis"],"confidence":0.7}',
+    '{"finding":"Forensic rebuttal added.","evidence":{"mitigation":"edge fallback"},"rebuttal":"Mitigation requires edge fallback.","tools_used":["resilience_scoring"],"confidence":0.8}',
     '{"finding":"Roadmap ready.","implementation_plan":{"phase_1":"Edge fallback"},"tools_used":["implementation_plan_builder"],"confidence":0.8}',
-    '{"finding":"Policy clear.","confirmed":true,"confidence":0.9}',
+    '{"finding":"Monitoring rules ready.","risk_signals":[{"name":"sla_resilience","level":"green"}],"monitoring_rules":[{"metric":"sla_resilience","threshold":"green"}],"alert_thresholds":[{"metric":"sla_resilience","red":"amber"}],"tools_used":["resilience_scoring"],"confidence":0.83}',
+    '{"finding":"Policy clear.","confirmed":true,"tools_used":["policy_compliance_scan"],"confidence":0.9}',
     '{"finding":"Consensus confirmed.","confirmed":true,"final_rationale":"Proceed after SLA mitigation.","confidence":0.86}'
   ]);
   const loop = new DecisionLoop({ registryDocument: agentRegistry, caseStore, auditLog, ai, maxIterations: 12 });
@@ -263,6 +269,9 @@ test("decision loop routes Devil's Advocate objections through debate queue", as
   assert.equal(result.case_state.objections[0].status, "answered");
   assert.equal(result.case_state.rebuttals.length, 1);
   assert.equal(result.case_state.consensus.level, "high");
+  const replay = await auditLog.replaySummary("CASE-DEBATE");
+  assert.ok(replay.events.some((event) => event.event_type === "objection_raised"));
+  assert.ok(replay.events.some((event) => event.event_type === "rebuttal_added"));
 });
 
 test("policy engine blocks unauthorized tools and blocked sandbox actions", () => {
@@ -317,6 +326,153 @@ test("audit log records ordered agent runs and replay returns chronological even
 
   assert.deepEqual(replay.agents, ["tracker", "induna"]);
   assert.deepEqual(replay.tools_used, ["five_whys", "policy_compliance_scan"]);
+});
+
+test("Worker exposes replayable case events as an event stream", async () => {
+  const db = new MockD1();
+  const audit = new D1AuditLog(db);
+  const store = new D1CaseStore(db);
+  const state = emptyCaseState("CASE-STREAM", "Stream events.");
+  state.organization_id = "default-org";
+  await store.saveCase(state);
+
+  await audit.logEvent({
+    event_id: "evt-stream-1",
+    event_type: "agent_start",
+    timestamp: "2026-04-21T10:01:00.000Z",
+    case_id: "CASE-STREAM",
+    agent_id: "tracker",
+    output_summary: "Tracker started."
+  });
+
+  const response = await worker.fetch(
+    new Request("https://example.test/api/cases/CASE-STREAM/events", {
+      headers: {
+        accept: "text/event-stream",
+        "Cf-Access-Authenticated-User-Email": "exec@example.com"
+      }
+    }),
+    { DB: db },
+    { waitUntil() {} }
+  );
+  const text = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.ok(response.headers.get("content-type").includes("text/event-stream"));
+  assert.ok(text.includes("event: agent_start"));
+  assert.ok(text.includes("Tracker started."));
+});
+
+test("Worker decision run endpoint is gated to analyst and admin roles", async () => {
+  const db = new MockD1();
+  const ai = aiWithResponses([
+    '{"finding":"Briefing complete.","signals":[{"name":"grid","severity":"high"}],"tools_used":["policy_compliance_scan"],"confidence":0.81}'
+  ]);
+
+  const executiveResponse = await worker.fetch(
+    new Request("https://example.test/api/decision/run", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Cf-Access-Authenticated-User-Email": "exec@example.com",
+        "X-AI-SRF-Role": "executive"
+      },
+      body: JSON.stringify({ case_id: "CASE-RUN-EXEC", entry_stage: 1 })
+    }),
+    { DB: db, AI: ai },
+    { waitUntil() {} }
+  );
+
+  const analystResponse = await worker.fetch(
+    new Request("https://example.test/api/decision/run", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Cf-Access-Authenticated-User-Email": "analyst@example.com",
+        "X-AI-SRF-Role": "analyst"
+      },
+      body: JSON.stringify({ case_id: "CASE-RUN-ANALYST", entry_stage: 1, max_iterations: 1 })
+    }),
+    { DB: db, AI: ai },
+    { waitUntil() {} }
+  );
+  const payload = await analystResponse.json();
+
+  assert.equal(executiveResponse.status, 403);
+  assert.equal(analystResponse.status, 200);
+  assert.equal(payload.case_state.created_by, "access:analyst@example.com");
+});
+
+test("Worker CORS allows Cloudflare Pages origin with credentials", async () => {
+  const response = await worker.fetch(
+    new Request("https://example.test/api/decision/run", {
+      method: "OPTIONS",
+      headers: {
+        Origin: "https://436ee841.ai-srf-cloudflare.pages.dev",
+        "Access-Control-Request-Method": "POST"
+      }
+    }),
+    { DB: new MockD1() },
+    { waitUntil() {} }
+  );
+
+  assert.equal(response.status, 204);
+  assert.equal(response.headers.get("Access-Control-Allow-Origin"), "https://436ee841.ai-srf-cloudflare.pages.dev");
+  assert.equal(response.headers.get("Access-Control-Allow-Credentials"), "true");
+  assert.ok(response.headers.get("Access-Control-Allow-Headers").includes("Content-Type"));
+});
+
+test("Worker command interface endpoints update state and log audit actions", async () => {
+  const db = new MockD1();
+  const ai = aiWithResponses([
+    '{"finding":"Briefing complete.","signals":[{"name":"grid","severity":"high"}],"tools_used":["policy_compliance_scan"],"confidence":0.81}',
+    '{"finding":"Briefing complete.","signals":[{"name":"assumption_gap","severity":"medium"}],"tools_used":["policy_compliance_scan"],"confidence":0.8}'
+  ]);
+  const env = { DB: db, AI: ai };
+  const headers = {
+    "Content-Type": "application/json",
+    "Cf-Access-Authenticated-User-Email": "analyst@example.com",
+    "X-AI-SRF-Role": "analyst"
+  };
+
+  const stressResponse = await worker.fetch(
+    new Request("https://example.test/api/decision/stress-test", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ case_id: "CASE-COMMAND", entry_stage: 1, max_iterations: 1, user_goal: "Stress test." })
+    }),
+    env,
+    { waitUntil() {} }
+  );
+  const challengeResponse = await worker.fetch(
+    new Request("https://example.test/api/decision/challenge-assumptions", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ case_id: "CASE-COMMAND", entry_stage: 1, max_iterations: 1, user_goal: "Challenge assumptions." })
+    }),
+    env,
+    { waitUntil() {} }
+  );
+  const reopenResponse = await worker.fetch(
+    new Request("https://example.test/api/decision/reopen", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ case_id: "CASE-COMMAND", entry_stage: 1, user_goal: "Reopen case." })
+    }),
+    env,
+    { waitUntil() {} }
+  );
+  const reopenPayload = await reopenResponse.json();
+  const replay = await new D1AuditLog(db).replaySummary("CASE-COMMAND");
+  const actions = replay.events.map((event) => event.action);
+
+  assert.equal(stressResponse.status, 200);
+  assert.equal(challengeResponse.status, 200);
+  assert.equal(reopenResponse.status, 200);
+  assert.equal(reopenPayload.case_state.status, "active");
+  assert.ok(actions.includes("stress_test_decision"));
+  assert.ok(actions.includes("challenge_assumptions"));
+  assert.ok(actions.includes("case_reopened"));
 });
 
 test("stage handoff advances from Environmental Monitor to Socratic Partner", async () => {

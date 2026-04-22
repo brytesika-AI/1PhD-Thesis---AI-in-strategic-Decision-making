@@ -56,6 +56,9 @@ Local development path:
 The Worker gateway exposes:
 
 - `GET /health`
+- `POST /api/auth/login`
+- `GET /api/auth/me`
+- `POST /api/auth/logout`
 - `GET /api/agents`
 - `POST /api/policy/check`
 - `GET /api/cases`
@@ -63,13 +66,16 @@ The Worker gateway exposes:
 - `POST /api/loop`
 - `GET /api/tools`
 - `GET /api/cases/{case_id}/replay`
+- `GET /api/cases/{case_id}/events`
 - `POST /api/cases/{case_id}/approvals/{approval_id}`
 
-`POST /api/loop` is the production decision engine. It selects the next agent, executes schema-bearing tools through policy hooks, emits events, persists state, enqueues debate/follow-up work, checks consensus, and stops only on decision reached, escalation required, no progress, or max iterations.
+`POST /api/loop` is the production decision engine. It selects the next agent, executes schema-bearing tools through `beforeToolCall` and `afterToolCall` policy hooks, emits events, persists state, enqueues debate/follow-up work, checks consensus, and stops only on decision reached, escalation required, no progress, or max iterations.
+
+`GET /api/cases/{case_id}/events` returns persisted case events as JSON by default and as a replayable `text/event-stream` response when requested with an SSE accept header.
 
 `POST /api/orchestrate` remains as a compatibility adapter for incremental migration.
 
-Every action emits structured D1-backed events such as `agent_start`, `agent_end`, `tool_execution_start`, `tool_execution_end`, `objection_raised`, `rebuttal_added`, `consensus_updated`, `policy_violation_detected`, and `case_closed`.
+Every action emits structured D1-backed events such as `agent_start`, `agent_end`, `queue_enqueued`, `queue_dequeued`, `tool_execution_start`, `tool_execution_end`, `objection_raised`, `rebuttal_added`, `consensus_updated`, `policy_violation_detected`, `loop_stopped`, and `case_closed`.
 
 The preserved sequence is:
 
@@ -81,7 +87,19 @@ Control agents sit outside the linear stage list:
 - Consensus Tracker preserves agreement, disagreement, confidence, and unresolved tensions.
 - Policy Sentinel validates tool calls and final decision readiness.
 
-Final decision readiness requires Devil's Advocate, Policy Sentinel, and Consensus Tracker validation.
+Final decision readiness requires Devil's Advocate, Monitoring Agent, Policy Sentinel, and Consensus Tracker validation. The Monitoring Agent must produce monitoring rules before the final policy and consensus checks run.
+
+## Authentication and Tenancy
+
+API routes are protected by either Cloudflare Access identity headers or the Worker JWT login flow. JWT login creates a signed `ai_srf_session` cookie and returns a user object with `user_id`, `email`, `role`, `organization_id`, and `organization_name`.
+
+Every case stores `created_by`, `last_modified_by`, `organization_id`, and `organization_name` in structured D1 payload state. Case listing, replay, and event reads are organization-filtered before data leaves the Worker. Audit event payloads include `user_id`, `action`, `timestamp`, and `agent` for governance traceability.
+
+Role gates:
+
+- analyst: run cases.
+- executive: view cases and approve or reject decisions.
+- admin: manage system and policy routes.
 
 ## Deployment Flow
 

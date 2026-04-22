@@ -46,7 +46,7 @@ def test_cloudflare_worker_artifacts_are_present_and_secret_safe() -> None:
     schema = (worker_dir / "schema.sql").read_text(encoding="utf-8")
 
     assert 'main = "src/index.js"' in wrangler
-    assert 'compatibility_date = "2026-04-21"' in wrangler
+    assert 'compatibility_date = "2026-04-22"' in wrangler
     assert "[observability]" in wrangler
     assert "NEWSAPI_KEY" not in legacy_wrangler
     assert "CREATE TABLE IF NOT EXISTS decision_cases" in schema
@@ -76,6 +76,8 @@ def test_worker_source_uses_cloudflare_first_bindings() -> None:
     assert "/api/orchestrate" in source
     assert "/api/loop" in source
     assert "/api/cases" in source
+    assert "/events" in source
+    assert "text/event-stream" in source
     assert "FastAPI" not in source
     assert "uvicorn" not in source
     assert "streamlit" not in source.lower()
@@ -85,15 +87,27 @@ def test_cloudflare_pages_workspace_contains_required_panels() -> None:
     html = (ROOT / "apps" / "web" / "index.html").read_text(encoding="utf-8")
 
     for label in [
-        "Situational Briefing",
-        "Current Stage",
+        "AI·SRF",
+        "Strategic Resilience Framework",
+        "Risk State",
+        "Board Brief",
+        "This framework does not help. It governs.",
+        "Run full decision cycle",
+        "Run Governed Decision Cycle",
+        "Challenge assumptions",
+        "Re-open case",
         "Evidence",
         "Assumptions",
         "Options",
-        "Stress Tests",
         "Implementation Roadmap",
         "Audit Trace",
-        "Monitoring Agent",
+        "Monitoring",
+        "Strongest Objection",
+        "Consensus Level",
+        "Implementation Readiness",
+        "Challenge function active",
+        'const API_BASE = "https://ai-srf-governance-worker.bryte-sika.workers.dev"',
+        'console.log("Running decision loop"',
     ]:
         assert label in html
 

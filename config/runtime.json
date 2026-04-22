@@ -36,6 +36,9 @@
     },
     "event_hooks": {
       "on_case_created": ["audit_event"],
+      "on_queue_changed": ["audit_event"],
+      "on_debate_changed": ["audit_event", "consensus_update"],
+      "on_tool_call": ["beforeToolCall", "afterToolCall", "audit_event"],
       "on_stage_completed": ["audit_event", "state_snapshot", "monitoring_trigger_check"],
       "on_human_approval_required": ["audit_event", "approval_gate"],
       "on_human_approval_decided": ["audit_event", "state_transition"],
