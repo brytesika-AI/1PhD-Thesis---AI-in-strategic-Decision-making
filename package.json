@@ -5,6 +5,10 @@
   "scripts": {
     "check:worker": "node --check apps/worker/src/index.js",
     "test:worker": "node --test tests/cloudflare-worker/*.test.mjs",
+    "test:unit": "node --test tests/unit/*.test.mjs",
+    "test:integration": "node --test tests/integration/*.test.mjs",
+    "test:e2e": "node --test tests/e2e/*.test.mjs",
+    "test:all": "node --test tests/unit/*.test.mjs tests/integration/*.test.mjs tests/e2e/*.test.mjs tests/cloudflare-worker/*.test.mjs",
     "deploy:worker": "wrangler deploy --config apps/worker/wrangler.toml",
     "deploy:pages": "wrangler pages deploy apps/web --project-name ai-srf-cloudflare --branch main",
     "d1:migrate": "wrangler d1 execute AI_SRF_SENSING --remote --file apps/worker/schema.sql"

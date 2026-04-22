@@ -1,15 +1,19 @@
 import { D1AuditLog } from "../../../packages/audit/d1-audit-log.js";
 import { OrchestrationGateway } from "../../../packages/core/orchestration-gateway.js";
+import { getLatestTwinState, updateDigitalTwin, updateTwinWithDecisionOutcome } from "../../../packages/digital-twin/digital-twin-engine.js";
 import { DecisionLoop } from "../../../packages/loop/decision-loop.js";
 import { D1MemoryStore } from "../../../packages/memory/d1-memory-store.js";
 import { PolicyEngine } from "../../../packages/policy/policy-engine.js";
+import { runSimulation } from "../../../packages/simulation/simulation-engine.js";
 import { listAgents, listAllAgents, listControlAgents, validateAgentRegistry } from "../../../packages/shared/agent-registry.js";
 import { listToolDefinitions } from "../../../packages/skills/index.js";
 import { D1CaseStore, emptyCaseState } from "../../../packages/state/d1-case-store.js";
 import { agentRegistry } from "./config/agents.js";
 
 const WORKER_ORIGIN = "https://ai-srf-governance-worker.bryte-sika.workers.dev";
+const PAGES_ORIGIN = "https://ai-srf-cloudflare.pages.dev";
 const STATIC_PAGES_ORIGINS = new Set([
+  PAGES_ORIGIN,
   "https://436ee841.ai-srf-cloudflare.pages.dev",
   "https://947aba3a.ai-srf-cloudflare.pages.dev",
   "https://65f08d50.ai-srf-cloudflare.pages.dev"
@@ -22,6 +26,7 @@ function allowedCorsOrigin(request) {
   try {
     const url = new URL(origin);
     if (STATIC_PAGES_ORIGINS.has(origin)) return origin;
+    if (origin === PAGES_ORIGIN) return origin;
     if (url.hostname.endsWith(".ai-srf-cloudflare.pages.dev")) return origin;
     if (origin === WORKER_ORIGIN) return origin;
   } catch {
@@ -185,7 +190,14 @@ function gateway(env) {
     auditLog: new D1AuditLog(env.DB),
     ai: env.AI,
     cache: env.CONFIG_CACHE,
-    memoryStore: new D1MemoryStore(env.DB)
+    memoryStore: new D1MemoryStore(env.DB),
+    digitalTwin: {
+      getLatestTwinState: ({ organizationId }) => getLatestTwinState(env, { organizationId }),
+      updateDecisionOutcome: ({ organizationId, caseState, outcome }) => updateTwinWithDecisionOutcome(env, { organizationId, caseState, outcome })
+    },
+    simulation: {
+      runSimulation: (state) => runSimulation(state, env)
+    }
   });
 }
 
@@ -196,7 +208,15 @@ function decisionLoop(env) {
     caseStore: new D1CaseStore(env.DB),
     auditLog: new D1AuditLog(env.DB),
     ai: env.AI,
-    cache: env.CONFIG_CACHE
+    cache: env.CONFIG_CACHE,
+    memoryStore: new D1MemoryStore(env.DB),
+    digitalTwin: {
+      getLatestTwinState: ({ organizationId }) => getLatestTwinState(env, { organizationId }),
+      updateDecisionOutcome: ({ organizationId, caseState, outcome }) => updateTwinWithDecisionOutcome(env, { organizationId, caseState, outcome })
+    },
+    simulation: {
+      runSimulation: (state) => runSimulation(state, env)
+    }
   });
 }
 
@@ -243,7 +263,8 @@ async function runDecisionCommand({ env, user, body, command, suffix = "", maxIt
     riskState: body.risk_state || "ELEVATED",
     sector: body.sector || "financial_services",
     user,
-    entryStage: body.entry_stage || existingCase?.current_stage || 1
+    entryStage: body.entry_stage || existingCase?.current_stage || 1,
+    simulationModeEnabled: Boolean(body.simulation_mode_enabled)
   });
   return { caseId, result };
 }
@@ -320,6 +341,24 @@ export default {
         return jsonResponse(request, { tools: listToolDefinitions() });
       }
 
+      if (url.pathname === "/api/digital-twin" && request.method === "GET") {
+        const twin = await getLatestTwinState(env, { organizationId: user.organization_id });
+        return jsonResponse(request, {
+          organization_id: user.organization_id,
+          digital_twin: twin
+        });
+      }
+
+      if (url.pathname === "/api/digital-twin/update" && request.method === "POST") {
+        const authz = requireRole(user, ["analyst", "admin"]);
+        if (!authz.allowed) return jsonResponse(request, { error: authz.error }, authz.status);
+        const result = await updateDigitalTwin(env, { organizationId: user.organization_id });
+        return jsonResponse(request, {
+          organization_id: user.organization_id,
+          digital_twin: result.updated[0] || null
+        });
+      }
+
       if (url.pathname === "/api/policy/check" && request.method === "POST") {
         const authz = requireRole(user, ["admin"]);
         if (!authz.allowed) return jsonResponse(request, { error: authz.error }, authz.status);
@@ -343,7 +382,8 @@ export default {
           userGoal: body.user_goal || body.input || "",
           riskState: body.risk_state || "ELEVATED",
           sector: body.sector || "general",
-          user
+          user,
+          simulationModeEnabled: Boolean(body.simulation_mode_enabled)
         });
         return jsonResponse(request, { case_id: caseId, ...result }, result.status || 200);
       }
@@ -359,7 +399,8 @@ export default {
           maxIterations: body.max_iterations || 12,
           riskState: body.risk_state || "ELEVATED",
           sector: body.sector || "general",
-          user
+          user,
+          simulationModeEnabled: Boolean(body.simulation_mode_enabled)
         });
         return jsonResponse(request, { case_id: caseId, ...result }, result.status || 200);
       }
@@ -405,6 +446,21 @@ export default {
           command: "challenge_assumptions",
           suffix: "Challenge assumptions and route weak assumptions through forensic re-evaluation.",
           maxIterations: 8
+        });
+        return jsonResponse(request, { case_id: caseId, ...result }, result.status || 200);
+      }
+
+      if (url.pathname === "/api/decision/simulate" && request.method === "POST") {
+        const authz = requireRole(user, ["analyst", "admin"]);
+        if (!authz.allowed) return jsonResponse(request, { error: authz.error }, authz.status);
+        const body = await readJson(request);
+        const { caseId, result } = await runDecisionCommand({
+          env,
+          user,
+          body: { ...body, simulation_mode_enabled: true },
+          command: "run_simulation_before_decision",
+          suffix: "Run simulation mode before final decision. Select the best strategy and block execution if simulated risk exceeds threshold.",
+          maxIterations: 16
         });
         return jsonResponse(request, { case_id: caseId, ...result }, result.status || 200);
       }
@@ -473,7 +529,8 @@ export default {
           approvalId: decodeURIComponent(approvalMatch[2]),
           approved: Boolean(body.approved),
           reviewer: user.email,
-          notes: body.notes || ""
+          notes: body.notes || "",
+          user
         });
         return jsonResponse(request, result, result.status || 200);
       }
@@ -484,7 +541,8 @@ export default {
         const result = await gateway(env).evaluateMonitoring({
           caseId: decodeURIComponent(monitoringMatch[1]),
           failedAssumptions: body.failed_assumptions || [],
-          trigger: body.trigger || "assumption_failure"
+          trigger: body.trigger || "assumption_failure",
+          user
         });
         return jsonResponse(request, result, result.status || 200);
       }
@@ -501,6 +559,9 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(env.CONFIG_CACHE?.put("last_monitoring_tick", new Date().toISOString()));
+    ctx.waitUntil(Promise.all([
+      env.CONFIG_CACHE?.put("last_monitoring_tick", new Date().toISOString()),
+      updateDigitalTwin(env)
+    ]));
   }
 };

@@ -1,92 +1,231 @@
-# AI-driven Strategic Resilience Framework (AI-SRF)
+# AI_SRF Strategic Decision Operating System
 
-## PhD Research Artefact
+AI_SRF is a Cloudflare-native, multi-agent strategic decision operating system for board-level and executive decision support. It is designed for high-risk organizational decisions where infrastructure volatility, regulatory obligations, operational constraints, and strategic uncertainty must be reasoned about through auditable tools rather than free-form agent text.
 
-The AI-SRF is a multi-agent reasoning system designed to close the epistemic gap in South African corporate boards facing compound infrastructure failure and regulatory fragmentation.
+The system combines tool-based agents, strategic framework selection and blending, simulation, a digital twin, shared organizational memory, procedural learning, and a strategic narrative generator. Its primary production runtime is Cloudflare Workers, Cloudflare D1, Cloudflare KV, and Cloudflare Pages.
 
-### Key Features
-- **Open-Model First**: Support for Ollama, Hugging Face, and Generic OpenAI endpoints.
-- **Regulation-Grounded RAG**: Integrated South African regulatory context (POPIA, King IV, EEA).
-- **Silicon Sampling Engine**: Synthetic stakeholder simulation for pre-validation of strategic options.
-- **ROR Indicators**: Real-time tracking of Return on Resilience metrics (DLR, Decision Alpha, IAR, ASY).
+## 1. Project Overview
 
-### Architecture
-1. **Institutional Sensing Layer**: Environmental Monitor Agent.
-2. **Context-Conditioned Reasoning Layer**: Socratic Partner, Forensic Analyst, Creative Catalyst, Devil's Advocate.
-3. **Socio-Technical Alignment Layer**: Implementation Scaffolding, Monitoring Agent.
+AI_SRF helps an organization move from case-level reasoning to organization-level intelligence. A governed decision run can:
 
-### Setup Instructions
-1. **Environment**:
-   - Clone the repo.
-   - Install dependencies: `pip install -r requirements.txt`.
-   - Setup `.env` file (see `.env.example`).
-2. **Models**:
-   - Ensure Ollama is running (`llama3.1:latest` and `nomic-embed-text` recommended).
-3. **Run Flow (Local Simulation)**:
-   - Start the orchestration API (FastAPI): `uvicorn app.api.main:app --reload --port 8000`
-   - Start the strategic workspace (Streamlit): `streamlit run app/ui/main.py`
-   - The workspace will persist local JSON trace logs in `workspace/audit_logs` and structured case data in `workspace/cases`.
+- Retrieve organization-scoped memory before agents reason.
+- Select the best strategic frameworks for the case.
+- Run framework tools such as SWOT, PESTLE, Porter's Five Forces, Value Chain Analysis, and Scenario Planning.
+- Blend framework outputs into prioritized risks, opportunities, constraints, tradeoffs, and recommended strategy.
+- Update and use a digital twin of organizational and environmental conditions.
+- Simulate decisions before execution.
+- Enforce policy, consensus, and human approval gates.
+- Store memory and learning after each run.
+- Generate an executive narrative for boardroom communication.
 
-### V4.1 Strategic Decision Operating System
-The core application has been refactored into an enterprise-grade governance platform with the following domain separation:
-- **Production target: Cloudflare.** Deployable runtime components should assume Cloudflare Workers for APIs/orchestration and Cloudflare Pages for the frontend.
-- **`apps/worker/`**: Cloudflare Worker production API and orchestration gateway using D1-backed case state and audit replay.
-- **`apps/web/`**: Cloudflare Pages-compatible panel workspace for production use.
-- **`packages/loop/`**: Stateful decision loop and steering/follow-up/debate queues.
-- **`packages/events/`**: Structured event bus persisted via D1 audit events.
-- **`packages/`**: Worker-safe modules for agents, registry loading, policy, controlled tools/skills, D1 state, D1 audit, debate, consensus, and orchestration.
-- **`config/runtime.json`**: Cloudflare-first runtime controls for gateway mode, stateful loop mode, queues, debate, sandbox policy, storage targets, memory discipline, and event hooks.
-- **`app/api/`**: The FastAPI endpoints that connect the Streamlit UI to the backend orchestration.
-- **`app/core/`**: The central *Orchestration Gateway* which reads agent configs and handles step-by-step LLM transitions.
-- **`app/agents/`**: Declarative registry loader pointing to `config/agents.yaml`, plus structured output validation.
-- **`app/skills/`**: Modular controlled skills for SWOT, Five Whys, RCA, compliance, scenarios, resilience scoring, and implementation plans.
-- **`app/policy/`**: Policy engine enforcing blocked-by-default tools, per-agent tool allowlists, upload safety, external access controls, and approval gates.
-- **`app/state/`**: Pydantic structured decision-case state stored as local JSON.
-- **`app/audit/`**: JSONL audit traces for agent execution, tool invocation, policy checks, human approval status, and replay.
-- **`app/ui/`**: Streamlit strategic workspace for local development with panels for briefing, evidence, assumptions, options, stress tests, roadmap, monitoring, and audit trace.
+Core capabilities:
 
-The governed AI-SRF sequence is preserved:
-Environmental Monitor -> Socratic Partner -> Forensic Analyst -> Creative Catalyst -> Devil's Advocate -> Implementation Scaffolding -> Monitoring Agent.
+- Tool-based agents with per-agent tool allowlists.
+- Automatic framework selection and hybrid framework blending.
+- Simulation engine with best, worst, and realistic scenarios.
+- Digital twin state for environment, operations, risk, and decision feedback.
+- Organization-scoped memory and learning logs.
+- Safe JSON enforcement and schema validation for tool outputs.
+- Narrative generator using Pyramid Principle and Situation-Complication-Resolution.
+- D1-backed audit replay and event streaming.
 
-The operating system adds three control agents:
-Decision Governor -> Consensus Tracker -> Policy Sentinel.
+## 2. Architecture
 
-Human-in-the-loop control is enforced as a first-class approval gate. Stages marked `requires_human_approval` in `config/agents.yaml` persist a pending approval record after execution. The orchestrator blocks downstream stages until the gate is approved through the workspace or `POST /api/runs/{case_id}/approvals/{approval_id}`.
+Primary decision flow:
 
-The strongest OpenClaw-style architectural ideas are translated into an enterprise governance platform: the gateway is the control plane, routing is explicit, skills are modular and policy-mediated, runtime behavior is config-driven, sessions are stateful but case-bounded, monitoring is event-hooked, and reasoning is surfaced through visible workspaces. The pi-agent-style runtime is implemented as an Agent -> decision loop -> tool execution -> state update -> event emission -> next action cycle with steering, follow-up, and debate queues. Queue enqueues/dequeues, objections, rebuttals, consensus updates, tool hooks, loop stops, and case closure are persisted as replayable D1 events. AI-SRF deliberately does not copy consumer assistant messaging sprawl or personal-assistant persona patterns.
-
-### Sample Local Case Flow
-1. Start the API: `uvicorn app.api.main:app --reload --port 8000`.
-2. Start the workspace: `streamlit run app/ui/main.py`.
-3. Enter a decision-case goal in the active stage panel.
-4. Approve or reject each mandatory human review gate before moving downstream.
-5. Inspect persisted case state under `workspace/cases`.
-6. Replay the audit trail through `GET /api/cases/{case_id}/replay`, stream case events through `GET /api/cases/{case_id}/events`, or use the workspace audit panel.
-
-### Sample Cloudflare Deployment Flow
-Cloudflare is the default production assumption.
-1. Apply D1 tables: `npm run d1:migrate`.
-2. Deploy the Worker API: `npm run deploy:worker`.
-3. Deploy the Pages workspace: `npm run deploy:pages`.
-4. Store external API keys as Cloudflare secrets, for example: `wrangler secret put NEWSAPI_KEY --config apps/worker/wrangler.toml`.
-
-Production state and audit records use Cloudflare D1. KV is used for lightweight runtime/config lookup, and R2 is reserved for large evidence bundles or exported artefacts. FastAPI, Streamlit, local JSON state, and local vector indexes are development adapters only.
-
-Production loop entrypoint: `POST /api/loop`.
-Compatibility stage adapter: `POST /api/orchestrate`.
-Replay/event stream entrypoints: `GET /api/cases/{case_id}/replay` and `GET /api/cases/{case_id}/events`.
-
-Authentication is enforced by the Worker for API routes. The Pages workspace uses `POST /api/auth/login` to set a secure JWT cookie, then calls protected routes with credentials included. Case state stores `created_by`, `last_modified_by`, `organization_id`, and `organization_name`; case listing and replay are filtered by organization. Roles are enforced as: analyst can run cases, executive can view and approve, admin can manage policy/system routes. For production, set `AUTH_PASSCODE` and `JWT_SECRET` as Cloudflare Worker secrets.
-
-See `docs/CLOUDFLARE_FIRST_ARCHITECTURE.md` for the full Cloudflare-first runtime split and tradeoffs.
-
-### Regression Tests
-Run the regression tests inside your python environment via:
-```bash
-python -m pytest tests/ -q -p no:cacheprovider
-npm run test:worker
+```text
+Digital Twin -> Framework Selector -> Framework Blender -> Simulation -> Decision Loop -> Narrative
 ```
 
-### Author
-**Bright Sikazwe**  
-PhD Candidate · April 2026
+Expanded runtime flow:
+
+```text
+Cloudflare Pages UI
+  -> Cloudflare Worker API
+  -> D1 case state and audit log
+  -> Digital Twin load
+  -> Shared Memory retrieval
+  -> Framework selection
+  -> Framework tool execution
+  -> Framework blending
+  -> Multi-agent decision loop
+  -> Simulation before final decision
+  -> Policy and consensus validation
+  -> Memory and learning persistence
+  -> Strategic narrative generation
+```
+
+Agent sequence:
+
+```text
+Environmental Monitor
+-> Socratic Partner
+-> Forensic Analyst
+-> Creative Catalyst
+-> Devil's Advocate
+-> Implementation Scaffolding
+-> Monitoring Agent
+-> Policy Sentinel
+-> Consensus Tracker
+```
+
+The Worker emits auditable events for agent start/end, tool calls, tool results, framework selection, simulation completion, memory writes, narrative generation, policy violations, loop stops, and system errors.
+
+## 3. Key Components
+
+Important folders:
+
+- `packages/loop/`
+  - Stateful decision loop, stage transitions, queues, tool orchestration, failure handling, simulation gating, and final decision readiness.
+
+- `packages/skills/`
+  - Tool implementations used by agents. Includes `gather_evidence`, assumptions extraction, framework tools, option generation, objections, stress tests, implementation plans, monitoring rules, memory extraction, learning extraction, and simulation tools.
+
+- `packages/memory/`
+  - D1-backed organizational memory, including episodic, semantic, procedural, organization-level memory, agent learning logs, retrieval ranking, and organizational intelligence output.
+
+- `packages/frameworks/`
+  - Framework selector and framework blender. Selects relevant strategic frameworks, normalizes outputs, ranks risks/opportunities, identifies conflicts, and synthesizes a blended strategy.
+
+- `packages/simulation/`
+  - Simulation engine. Generates scenarios, applies them to digital twin and framework state, runs mini decision loops, evaluates outcomes, and chooses the best strategy.
+
+- `packages/digital-twin/`
+  - Digital twin engine. Ingests load shedding, market, system, and regulatory data; computes risk state; persists twin state; feeds simulation and decision loops.
+
+- `packages/narrative/`
+  - Strategic narrative generator. Converts structured analysis into executive summary, SCR narrative, insights, risks, tradeoffs, recommendation, implementation story, and confidence.
+
+- `utils/`
+  - Shared infrastructure utilities, including JSON enforcement, schema validation, safe tool execution, and structured tool failure handling.
+
+- `apps/worker/`
+  - Cloudflare Worker API, authentication, D1 schema, CORS, command endpoints, scheduled digital twin updates, and production orchestration.
+
+- `apps/web/`
+  - Cloudflare Pages frontend with panels for digital twin status, organizational intelligence, strategic analysis, framework selection, blended strategy, simulation results, and executive narrative.
+
+## 4. How to Run
+
+Install dependencies:
+
+```powershell
+npm install
+```
+
+Run tests:
+
+```powershell
+npm run test:all
+python -m pytest tests\test_cloudflare_architecture.py
+```
+
+Run Worker syntax check:
+
+```powershell
+npm run check:worker
+```
+
+Apply D1 schema:
+
+```powershell
+npm run d1:migrate
+```
+
+Deploy Worker:
+
+```powershell
+npm run deploy:worker
+```
+
+Deploy frontend:
+
+```powershell
+npm run deploy:pages
+```
+
+Production URLs:
+
+- Web UI: <https://ai-srf-cloudflare.pages.dev>
+- Worker API: <https://ai-srf-governance-worker.bryte-sika.workers.dev>
+
+Test login:
+
+- Email: `analyst@board.example`
+- Role: `analyst`
+- Organization ID: `board-alpha`
+- Organization Name: `Board Alpha`
+- Access Passcode: `ai-srf-dev`
+
+Useful scenario:
+
+```text
+Cloud migration with load shedding + POPIA risk
+```
+
+Recommended UI flow:
+
+1. Login as analyst.
+2. Enter the scenario in Decision Case.
+3. Click `Run Simulation Before Decision`.
+4. Click `Run Governed Decision Cycle`.
+5. Review Digital Twin Status, Framework Selection, Strategic Analysis, Blended Strategy, Simulation Results, Organizational Intelligence, and Executive Narrative.
+
+## 5. Known Issues
+
+- Cloudflare KV keys are limited to 512 bytes.
+  - Never use JSON or full state payloads as KV keys.
+  - Store JSON as the value.
+  - Use short keys such as `case:<case_id>`, `evidence:<case_id>`, or `memory:<org_id>:<type>:<short_id>`.
+
+- D1 table dependencies must exist before production decision runs.
+  - Required tables include `decision_cases`, `audit_events`, `digital_twin_state`, `organization_memory`, `agent_learning_log`, `episodic_memory`, `semantic_memory`, and `procedural_memory`.
+  - Run `npm run d1:migrate` after schema changes.
+
+- Tool outputs must be valid JSON objects.
+  - LLM output must pass `enforceJSON()`.
+  - Tool outputs must pass schema validation.
+  - Invalid JSON, empty outputs, and stringified objects such as `[object Object]` are handled through retry/fallback logic.
+
+- Critical tool failures stop the loop.
+  - Infrastructure failures such as KV key overflow or missing D1 tables should not re-enqueue degraded agent turns indefinitely.
+  - The loop records `CRITICAL TOOL FAILURE` and stops.
+
+- Simulation risk gates can require human approval.
+  - A live run may stop at `human_approval_required`; this is expected governance behavior, not a system fault.
+
+## 6. Future Roadmap
+
+- Autonomous execution for pre-approved low-risk actions.
+- Streaming agent progress and live trace panels.
+- More advanced optimization for strategy selection and portfolio-level decision scheduling.
+- Richer digital twin integrations with real external infrastructure, market, regulatory, and operational data.
+- Model evaluation harness for framework quality, narrative quality, and decision outcome quality.
+- Longitudinal organizational learning dashboards.
+
+## Development Notes
+
+Main test suites:
+
+```powershell
+npm run test:unit
+npm run test:integration
+npm run test:e2e
+npm run test:worker
+npm run test:all
+```
+
+Key production commands:
+
+```powershell
+npm run d1:migrate
+npm run deploy:worker
+npm run deploy:pages
+```
+
+Authentication is handled by the Worker. The Pages workspace posts to `/api/auth/login`, receives a secure JWT cookie, and then calls protected routes with credentials included. Case state, replay, memory, and digital twin data are scoped by `organization_id`.
+
+## Author
+
+Bright Sikazwe  
+PhD Candidate, AI in Strategic Decision Making

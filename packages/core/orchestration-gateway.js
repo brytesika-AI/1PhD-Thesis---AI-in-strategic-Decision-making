@@ -1,6 +1,9 @@
 import { getAgentForStage, nextAgentId } from "../shared/agent-registry.js";
 import { EventHooks } from "./event-hooks.js";
 import { EventBus } from "../events/event-bus.js";
+import { blendFrameworks } from "../frameworks/framework-blender.js";
+import { selectFrameworks } from "../frameworks/framework-selector.js";
+import { buildOrganizationalIntelligence } from "../memory/d1-memory-store.js";
 import { PolicyEngine } from "../policy/policy-engine.js";
 import { executeToolWithHooks, validateToolOutput } from "../skills/index.js";
 import { emptyCaseState } from "../state/d1-case-store.js";
@@ -21,13 +24,28 @@ const AGENT_TOOL_MAP = {
   consensus_tracker: "validate_consensus"
 };
 
+const FRAMEWORK_STATE_MAP = {
+  run_porters_five_forces: { framework: "porter", analysis: "industry" },
+  run_swot_analysis: { framework: "swot", analysis: "internal" },
+  run_pestle_analysis: { framework: "pestle", analysis: "environment" },
+  run_value_chain_analysis: { framework: "value_chain", analysis: "value_chain" },
+  run_scenario_planning: { framework: "scenario_planning", analysis: "scenarios" }
+};
+
+function stripPolicyMetadata(output = {}) {
+  const { policy_check, after_policy_check, tools_used, ...rest } = output || {};
+  return rest;
+}
+
 export class OrchestrationGateway {
-  constructor({ registryDocument, caseStore, auditLog, ai, cache = null }) {
+  constructor({ registryDocument, caseStore, auditLog, ai, cache = null, memoryStore = null, digitalTwin = null }) {
     this.registryDocument = registryDocument;
     this.caseStore = caseStore;
     this.auditLog = auditLog;
     this.ai = ai;
     this.cache = cache;
+    this.memoryStore = memoryStore;
+    this.digitalTwin = digitalTwin;
     this.policy = new PolicyEngine(registryDocument);
     this.hooks = new EventHooks({ auditLog, caseStore });
     this.events = new EventBus({ auditLog });
@@ -40,6 +58,9 @@ export class OrchestrationGateway {
     }
 
     let caseState = await this.caseStore.getCase(caseId);
+    if (caseState?.organization_id && user?.organization_id && caseState.organization_id !== user.organization_id) {
+      return { error: "Case not found.", status: 404 };
+    }
     if (!caseState) {
       caseState = emptyCaseState(caseId, userGoal);
       caseState.created_by = user?.user_id || null;
@@ -60,6 +81,19 @@ export class OrchestrationGateway {
       });
     }
     caseState.last_modified_by = user?.user_id || caseState.last_modified_by || null;
+    caseState.organization_id = caseState.organization_id || user?.organization_id || null;
+    caseState.organization_name = caseState.organization_name || user?.organization_name || null;
+    if (this.digitalTwin?.getLatestTwinState && caseState.organization_id) {
+      caseState.digital_twin = await this.digitalTwin.getLatestTwinState({ organizationId: caseState.organization_id, caseState });
+    }
+    if (this.memoryStore) {
+      caseState.shared_memory = await this.memoryStore.retrieve({ caseId, userGoal, user, caseState });
+      caseState.memory = caseState.shared_memory;
+      caseState.organizational_intelligence = caseState.shared_memory.organizational_intelligence || buildOrganizationalIntelligence(caseState.shared_memory);
+    }
+    caseState.framework_selection = caseState.framework_selection?.primary_framework
+      ? caseState.framework_selection
+      : await selectFrameworks({ ...caseState, case_description: userGoal || caseState.user_goal }, { ai: caseState.framework_selector_llm_enabled ? this.ai : null });
 
     const pendingGate = [...caseState.approval_gates].reverse().find((gate) => gate.status === "pending");
     if (pendingGate && Number(stage) > Number(pendingGate.stage_id)) {
@@ -72,12 +106,22 @@ export class OrchestrationGateway {
     }
 
     const toolName = AGENT_TOOL_MAP[agent.id] || agent.allowed_tools[0];
+    const frameworkResults = await this.executeFrameworkTools({ agent, caseState, userGoal, riskState, sector });
     const output = validateToolOutput(await executeToolWithHooks({
       agentId: agent.id,
       toolName,
       input: {
         text: userGoal,
-        context: { ...caseState, risk_state: riskState, sector },
+        context: {
+          ...caseState,
+          memory: caseState.shared_memory || caseState.memory || {},
+          shared_memory: caseState.shared_memory || caseState.memory || {},
+          frameworks: caseState.frameworks || {},
+          analysis: caseState.analysis || {},
+          digital_twin: caseState.digital_twin || null,
+          risk_state: riskState,
+          sector
+        },
         llm: this.ai,
         cache: this.cache
       },
@@ -85,7 +129,7 @@ export class OrchestrationGateway {
       eventBus: this.events,
       caseId
     }));
-    const toolResults = {};
+    const toolResults = { ...frameworkResults };
     const policyChecks = [];
     toolResults[toolName] = { ...output };
     if (output.policy_check) policyChecks.push(output.policy_check);
@@ -100,6 +144,8 @@ export class OrchestrationGateway {
     });
 
     output.tool_results = toolResults;
+    output.frameworks = caseState.frameworks || {};
+    output.analysis = caseState.analysis || {};
     const auditRef = await this.hooks.emit("audit_event", {
       case_id: caseId,
       agent_id: agent.id,
@@ -139,15 +185,73 @@ export class OrchestrationGateway {
       agent: agent.display_name,
       content: output,
       audit_ref: auditRef,
+      organizational_intelligence: caseState.organizational_intelligence || null,
       case_state: caseState,
       approval_required: this.policy.requiresApproval(agent.id),
       approval_gate: caseState.approval_gates.at(-1) || null
     };
   }
 
-  async decideApproval({ caseId, approvalId, approved, reviewer = "human", notes = "" }) {
+  async executeFrameworkTools({ agent, caseState, userGoal, riskState, sector }) {
+    const results = {};
+    const selectedTools = this.frameworkToolsForAgent(caseState, agent.id);
+    for (const frameworkTool of selectedTools) {
+      const result = validateToolOutput(await executeToolWithHooks({
+        agentId: agent.id,
+        toolName: frameworkTool,
+        input: {
+          text: userGoal,
+          context: {
+            ...caseState,
+            memory: caseState.shared_memory || caseState.memory || {},
+            shared_memory: caseState.shared_memory || caseState.memory || {},
+            frameworks: caseState.frameworks || {},
+            analysis: caseState.analysis || {},
+            digital_twin: caseState.digital_twin || null,
+            risk_state: riskState,
+            sector
+          },
+          llm: this.ai,
+          cache: this.cache
+        },
+        policy: this.policy,
+        eventBus: this.events,
+        caseId: caseState.case_id
+      }));
+      const mapping = FRAMEWORK_STATE_MAP[frameworkTool];
+      if (mapping) {
+        const structured = stripPolicyMetadata(result);
+        caseState.frameworks = { ...(caseState.frameworks || {}), [mapping.framework]: structured };
+        caseState.framework_outputs = {
+          ...(caseState.framework_outputs || {}),
+          [mapping.framework === "scenario_planning" ? "scenario" : mapping.framework]: structured
+        };
+        caseState.analysis = { ...(caseState.analysis || {}), [mapping.analysis]: structured };
+        caseState.blended_analysis = blendFrameworks(caseState.framework_outputs);
+      }
+      results[frameworkTool] = { ...result };
+    }
+    return results;
+  }
+
+  frameworkToolsForAgent(caseState, agentId) {
+    if (agentId === "induna" || agentId === "policy_sentinel" || agentId === "consensus_tracker") return [];
+    const agent = getAgentForStage(this.registryDocument, Number(caseState.current_stage || 1)) || this.registryDocument?.agents?.[agentId];
+    const tools = caseState.framework_selection?.tool_names?.length
+      ? caseState.framework_selection.tool_names
+      : ["run_swot_analysis", "run_scenario_planning"];
+    return tools.filter((toolName) => {
+      const mapping = FRAMEWORK_STATE_MAP[toolName];
+      return mapping && agent?.allowed_tools?.includes(toolName) && !caseState.frameworks?.[mapping.framework];
+    });
+  }
+
+  async decideApproval({ caseId, approvalId, approved, reviewer = "human", notes = "", user = null }) {
     const caseState = await this.caseStore.getCase(caseId);
     if (!caseState) {
+      return { error: "Case not found.", status: 404 };
+    }
+    if (caseState.organization_id && user?.organization_id && caseState.organization_id !== user.organization_id) {
       return { error: "Case not found.", status: 404 };
     }
 
@@ -183,9 +287,12 @@ export class OrchestrationGateway {
     return { case_state: caseState, approval_gate: gate, audit_ref: auditRef };
   }
 
-  async evaluateMonitoring({ caseId, failedAssumptions = [], trigger = "assumption_failure" }) {
+  async evaluateMonitoring({ caseId, failedAssumptions = [], trigger = "assumption_failure", user = null }) {
     const caseState = await this.caseStore.getCase(caseId);
     if (!caseState) {
+      return { error: "Case not found.", status: 404 };
+    }
+    if (caseState.organization_id && user?.organization_id && caseState.organization_id !== user.organization_id) {
       return { error: "Case not found.", status: 404 };
     }
 

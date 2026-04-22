@@ -11,6 +11,51 @@ export function emptyCaseState(caseId, userGoal = "") {
     organization_name: null,
     situational_briefing: {},
     evidence_bundle: {},
+    framework_selection: {
+      primary_framework: null,
+      secondary_frameworks: [],
+      justification: "",
+      classification: null,
+      ranked_frameworks: [],
+      tool_names: []
+    },
+    framework_selector_llm_enabled: false,
+    frameworks: {
+      porter: null,
+      swot: null,
+      pestle: null,
+      value_chain: null,
+      scenario_planning: null
+    },
+    framework_outputs: {
+      porter: null,
+      swot: null,
+      pestle: null,
+      value_chain: null,
+      scenario: null
+    },
+    analysis: {
+      industry: null,
+      internal: null,
+      environment: null,
+      value_chain: null,
+      scenarios: null
+    },
+    blended_analysis: {
+      framework_contributors: [],
+      top_risks: [],
+      top_opportunities: [],
+      top_constraints: [],
+      top_strengths: [],
+      strategic_options: [],
+      conflicts: [],
+      recommended_strategy: "",
+      alternatives: [],
+      key_tradeoffs: [],
+      confidence: 0
+    },
+    narrative: null,
+    narrative_mode: "board",
     assumptions: [],
     options: [],
     options_generated: [],
@@ -36,7 +81,23 @@ export function emptyCaseState(caseId, userGoal = "") {
       semantic: [],
       procedural: []
     },
+    shared_memory: {
+      episodic: [],
+      semantic: [],
+      procedural: []
+    },
+    organizational_intelligence: {
+      recommended_strategy: "Use governed evidence, challenge, and monitoring gates.",
+      confidence: 0.5,
+      based_on: []
+    },
+    digital_twin: null,
+    simulation_mode_enabled: false,
+    simulation: null,
+    recommended_strategy: null,
+    simulation_block: null,
     reflection: {},
+    learning: {},
     audit_log_refs: [],
     audit_refs: [],
     stage_outputs: {},

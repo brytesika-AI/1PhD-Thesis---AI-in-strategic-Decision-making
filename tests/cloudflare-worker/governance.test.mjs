@@ -31,6 +31,9 @@ class MockD1 {
     this.episodicMemory = [];
     this.semanticMemory = [];
     this.proceduralMemory = new Map();
+    this.organizationMemory = [];
+    this.agentLearningLog = [];
+    this.digitalTwinStates = [];
   }
 
   prepare(sql) {
@@ -54,6 +57,12 @@ class MockStatement {
     if (this.sql.includes("FROM decision_cases")) {
       const payload = this.db.cases.get(this.params[0]);
       return payload ? { payload } : null;
+    }
+    if (this.sql.includes("FROM digital_twin_state")) {
+      const [organizationId] = this.params;
+      return this.db.digitalTwinStates
+        .filter((row) => row.organization_id === organizationId)
+        .sort((left, right) => right.last_updated.localeCompare(left.last_updated))[0] || null;
     }
     return null;
   }
@@ -92,6 +101,17 @@ class MockStatement {
           .filter((row) => (row.organization_id || "__global__") === organizationId)
           .sort((left, right) => Number(right.success_rate) - Number(left.success_rate) || Number(left.failure_count) - Number(right.failure_count))
       };
+    }
+    if (this.sql.includes("FROM organization_memory")) {
+      const [organizationId, memoryType] = this.params;
+      return {
+        results: this.db.organizationMemory
+          .filter((row) => row.organization_id === organizationId && row.memory_type === memoryType)
+          .sort((left, right) => Number(right.success_rate) - Number(left.success_rate) || right.updated_at.localeCompare(left.updated_at))
+      };
+    }
+    if (this.sql.includes("SELECT DISTINCT organization_id FROM users")) {
+      return { results: [] };
     }
     return { results: [] };
   }
@@ -158,6 +178,21 @@ class MockStatement {
       }
       return { success: true };
     }
+    if (this.sql.includes("INSERT INTO organization_memory")) {
+      const [id, organization_id, memory_type, content, tags, confidence, success_rate, failure_count, created_at, updated_at] = this.params;
+      this.db.organizationMemory.push({ id, organization_id, memory_type, content, tags, confidence, success_rate, failure_count, created_at, updated_at });
+      return { success: true };
+    }
+    if (this.sql.includes("INSERT INTO agent_learning_log")) {
+      const [id, agent_name, lesson, improvement, impact, organization_id, timestamp] = this.params;
+      this.db.agentLearningLog.push({ id, agent_name, lesson, improvement, impact, organization_id, timestamp });
+      return { success: true };
+    }
+    if (this.sql.includes("INSERT INTO digital_twin_state")) {
+      const [organization_id, timestamp, environment_state, operational_state, risk_state, decision_state, last_updated] = this.params;
+      this.db.digitalTwinStates.push({ organization_id, timestamp, environment_state, operational_state, risk_state, decision_state, last_updated });
+      return { success: true };
+    }
     return { success: true };
   }
 }
@@ -196,6 +231,16 @@ function aiWithResponses(responses) {
     calls: [],
     async run(model, payload) {
       this.calls.push({ model, payload });
+      const prompt = payload?.messages?.find((message) => message.role === "user")?.content?.trim() || "";
+      if (
+        prompt.startsWith("Analyze using Porter's Five Forces") ||
+        prompt.startsWith("Perform SWOT analysis") ||
+        prompt.startsWith("Perform PESTLE analysis") ||
+        prompt.startsWith("Perform Value Chain Analysis") ||
+        prompt.startsWith("Perform Scenario Planning")
+      ) {
+        return { response: "{}" };
+      }
       const response = responses[index] || responses.at(-1) || "{}";
       index += 1;
       return { response };
@@ -236,7 +281,15 @@ test("agent registry loads all AI-SRF and control agents with required fields an
     "validate_policy",
     "validate_consensus",
     "extract_memory",
-    "reflect_on_decision"
+    "reflect_on_decision",
+    "extract_learning",
+    "generate_scenarios",
+    "evaluate_outcome",
+    "run_porters_five_forces",
+    "run_swot_analysis",
+    "run_pestle_analysis",
+    "run_value_chain_analysis",
+    "run_scenario_planning"
   ]);
 
   assert.equal(agents.length, 7);
@@ -291,7 +344,15 @@ test("stateful decision loop emits events, executes tools, and reaches a governe
   assert.equal(result.case_state.verification_chain.devil_advocate_validated, true);
   assert.equal(result.case_state.verification_chain.policy_sentinel_validated, true);
   assert.equal(result.case_state.verification_chain.consensus_tracker_confirmed, true);
+  assert.ok(result.case_state.framework_selection.primary_framework);
+  assert.ok(result.case_state.framework_selection.tool_names.length >= 1);
+  assert.ok(Object.values(result.case_state.frameworks).some(Boolean));
+  assert.ok(result.case_state.blended_analysis.recommended_strategy);
+  assert.ok(result.case_state.narrative.executive_summary);
+  assert.ok(result.case_state.narrative.recommended_action);
   assert.ok(replay.events.some((event) => event.event_type === "agent_start"));
+  assert.ok(replay.events.some((event) => event.event_type === "framework_selected"));
+  assert.ok(replay.events.some((event) => event.event_type === "narrative_generated"));
   assert.ok(replay.events.some((event) => event.event_type === "tool_execution_start"));
   assert.ok(replay.events.some((event) => event.event_type === "queue_enqueued"));
   assert.ok(replay.events.some((event) => event.event_type === "consensus_updated"));
@@ -479,6 +540,48 @@ test("Worker CORS allows Cloudflare Pages origin with credentials", async () => 
   assert.ok(response.headers.get("Access-Control-Allow-Headers").includes("Content-Type"));
 });
 
+test("Worker digital twin endpoint updates and returns organization-scoped state", async () => {
+  const db = new MockD1();
+  const env = {
+    DB: db,
+    MOCK_LOAD_SHEDDING_STAGE: "4",
+    MOCK_CPU_LOAD_PCT: "82",
+    MOCK_MARKET_VOLATILITY: "0.56"
+  };
+  const headers = {
+    "Content-Type": "application/json",
+    "Cf-Access-Authenticated-User-Email": "analyst@example.com",
+    "X-AI-SRF-Role": "analyst",
+    "X-AI-SRF-Org": "org-twin"
+  };
+
+  const updateResponse = await worker.fetch(
+    new Request("https://example.test/api/digital-twin/update", {
+      method: "POST",
+      headers,
+      body: "{}"
+    }),
+    env,
+    { waitUntil() {} }
+  );
+  const getResponse = await worker.fetch(
+    new Request("https://example.test/api/digital-twin", {
+      method: "GET",
+      headers
+    }),
+    env,
+    { waitUntil() {} }
+  );
+  const payload = await getResponse.json();
+
+  assert.equal(updateResponse.status, 200);
+  assert.equal(getResponse.status, 200);
+  assert.equal(payload.digital_twin.organization_id, "org-twin");
+  assert.equal(payload.digital_twin.environment_state.load_shedding.stage, 4);
+  assert.ok(["medium", "high", "critical"].includes(payload.digital_twin.risk_state.level));
+  assert.ok(db.auditEvents.some((event) => event.event_type === "digital_twin_updated"));
+});
+
 test("Worker command interface endpoints update state and log audit actions", async () => {
   const db = new MockD1();
   const ai = aiWithResponses([
@@ -530,6 +633,45 @@ test("Worker command interface endpoints update state and log audit actions", as
   assert.ok(actions.includes("stress_test_decision"));
   assert.ok(actions.includes("challenge_assumptions"));
   assert.ok(actions.includes("case_reopened"));
+});
+
+test("Worker simulation command runs scenarios before decision and records results", async () => {
+  const db = new MockD1();
+  const env = {
+    DB: db,
+    AI: null,
+    SIMULATION_RISK_THRESHOLD: "0.95"
+  };
+  const headers = {
+    "Content-Type": "application/json",
+    "Cf-Access-Authenticated-User-Email": "analyst@example.com",
+    "X-AI-SRF-Role": "analyst",
+    "X-AI-SRF-Org": "org-sim"
+  };
+
+  const response = await worker.fetch(
+    new Request("https://example.test/api/decision/simulate", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        case_id: "CASE-SIM",
+        entry_stage: 1,
+        user_goal: "Simulate cloud migration before execution.",
+        max_iterations: 16
+      })
+    }),
+    env,
+    { waitUntil() {} }
+  );
+  const payload = await response.json();
+  const replay = await new D1AuditLog(db).replaySummary("CASE-SIM");
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.case_state.simulation_mode_enabled, true);
+  assert.ok(payload.case_state.simulation.best_strategy);
+  assert.ok(payload.case_state.simulation.simulation_summary.length >= 3);
+  assert.ok(replay.events.some((event) => event.event_type === "simulation_completed"));
+  assert.ok(db.episodicMemory.some((row) => row.event_type === "simulation_completed"));
 });
 
 test("stage handoff advances from Environmental Monitor to Socratic Partner", async () => {
@@ -671,10 +813,15 @@ test("decision loop retrieves and writes episodic, semantic, and procedural memo
   assert.equal(result.case_state.memory.procedural[0].task_type, "cloud_migration");
   assert.ok(db.episodicMemory.length >= 1);
   assert.ok(db.semanticMemory.length >= 1);
+  assert.ok(db.organizationMemory.length >= 1);
+  assert.ok(db.agentLearningLog.length >= 3);
   assert.ok(Number(learned.success_rate) > 0.6);
+  assert.equal(result.case_state.shared_memory.procedural[0].task_type, "cloud_migration");
+  assert.ok(result.case_state.organizational_intelligence.based_on.length >= 1);
   assert.ok(replay.events.some((event) => event.event_type === "memory_retrieved"));
   assert.ok(replay.events.some((event) => event.event_type === "memory_written"));
   assert.ok(replay.events.some((event) => event.event_type === "reflection_completed"));
+  assert.ok(replay.events.some((event) => event.event_type === "learning_extracted"));
 });
 
 test("production assumptions point to Cloudflare rather than an always-on server", async () => {

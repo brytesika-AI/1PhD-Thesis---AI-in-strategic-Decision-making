@@ -268,7 +268,7 @@
     }
     .command-row {
       display: grid;
-      grid-template-columns: repeat(4, minmax(160px, 1fr));
+      grid-template-columns: repeat(5, minmax(160px, 1fr));
       gap: 8px;
     }
     .login-screen {
@@ -389,6 +389,22 @@
             <h2>Evidence</h2>
             <pre id="evidence">No evidence recorded.</pre>
           </section>
+          <section class="panel wide">
+            <h2>STRATEGIC ANALYSIS</h2>
+            <pre id="strategicAnalysis">No strategic analysis yet.</pre>
+          </section>
+          <section class="panel wide">
+            <h2>FRAMEWORK SELECTION</h2>
+            <pre id="frameworkSelection">No framework selection yet.</pre>
+          </section>
+          <section class="panel wide">
+            <h2>BLENDED STRATEGY</h2>
+            <pre id="blendedStrategy">No blended strategy yet.</pre>
+          </section>
+          <section class="panel wide">
+            <h2>EXECUTIVE NARRATIVE</h2>
+            <pre id="executiveNarrative">No executive narrative yet.</pre>
+          </section>
           <section class="panel">
             <h2>Assumptions</h2>
             <pre id="assumptions">No assumptions recorded.</pre>
@@ -402,8 +418,20 @@
             <pre id="monitoring">No monitoring rules.</pre>
           </section>
           <section class="panel wide">
+            <h2>DIGITAL TWIN STATUS</h2>
+            <pre id="digitalTwin">No digital twin state loaded.</pre>
+          </section>
+          <section class="panel wide">
+            <h2>SIMULATION RESULTS</h2>
+            <pre id="simulationResults">No simulation results yet.</pre>
+          </section>
+          <section class="panel wide">
             <h2>Learning & Memory</h2>
             <pre id="memory">No memory retrieved.</pre>
+          </section>
+          <section class="panel wide">
+            <h2>ORGANIZATIONAL INTELLIGENCE</h2>
+            <pre id="orgIntelligence">No organizational intelligence yet.</pre>
           </section>
           <section class="panel wide">
             <h2>Implementation Roadmap</h2>
@@ -420,6 +448,7 @@
         <div class="caption">This framework does not help. It governs.</div>
         <div class="command-row">
           <button class="command primary-command" id="runFull" type="button">Run full decision cycle</button>
+          <button class="command primary-command" id="runSimulation" type="button">Run Simulation Before Decision</button>
           <button class="command danger" id="stressTest" type="button">Stress test current decision</button>
           <button class="command danger" id="challengeAssumptions" type="button">Challenge assumptions</button>
           <button class="command" id="reopenCase" type="button">Re-open case</button>
@@ -466,6 +495,7 @@
       document.getElementById("runFull").disabled = !allowed;
       document.getElementById("stressTest").disabled = !allowed;
       document.getElementById("challengeAssumptions").disabled = !allowed;
+      document.getElementById("runSimulation").disabled = !allowed;
       document.getElementById("reopenCase").disabled = !allowed;
     }
 
@@ -523,6 +553,7 @@
         document.getElementById("loginScreen").classList.add("hidden");
         document.getElementById("appShell").classList.remove("hidden");
         applyRoleGates();
+        await loadDigitalTwin();
       } catch {
         document.getElementById("loginScreen").classList.remove("hidden");
         document.getElementById("appShell").classList.add("hidden");
@@ -658,23 +689,107 @@
       document.getElementById("boardBrief").textContent = (state.decision?.rationale || state.consensus?.final_rationale || "No verdict yet. Run a governed decision cycle.").slice(0, 260);
       document.getElementById("devil").textContent = pretty(objection || state.devil_advocate_findings, "Challenge function active");
       document.getElementById("evidence").textContent = pretty(state.evidence_bundle, "No evidence recorded.");
+      document.getElementById("strategicAnalysis").textContent = pretty({
+        porters_summary: state.frameworks?.porter || state.analysis?.industry || null,
+        swot_summary: state.frameworks?.swot || state.analysis?.internal || null,
+        pestle_highlights: state.frameworks?.pestle?.highlights || state.analysis?.environment?.highlights || [],
+        value_chain_bottlenecks: state.frameworks?.value_chain?.bottlenecks || [],
+        scenario_posture: state.frameworks?.scenario_planning?.preferred_posture || null
+      }, "No strategic analysis yet.");
+      document.getElementById("frameworkSelection").textContent = pretty(state.framework_selection ? {
+        primary_framework: state.framework_selection.primary_framework,
+        supporting_frameworks: state.framework_selection.secondary_frameworks || [],
+        reason: state.framework_selection.justification,
+        classification: state.framework_selection.classification,
+        ranked_frameworks: state.framework_selection.ranked_frameworks || []
+      } : null, "No framework selection yet.");
+      document.getElementById("blendedStrategy").textContent = pretty(state.blended_analysis?.recommended_strategy ? {
+        final_recommendation: state.blended_analysis.recommended_strategy,
+        confidence: state.blended_analysis.confidence,
+        top_risks: (state.blended_analysis.top_risks || []).slice(0, 5),
+        top_opportunities: (state.blended_analysis.top_opportunities || []).slice(0, 5),
+        key_tradeoffs: state.blended_analysis.key_tradeoffs || [],
+        conflicts: state.blended_analysis.conflicts || [],
+        contributors: state.blended_analysis.framework_contributors || []
+      } : null, "No blended strategy yet.");
+      document.getElementById("executiveNarrative").textContent = pretty(state.narrative ? {
+        executive_summary: state.narrative.executive_summary,
+        strategic_narrative: state.narrative.strategic_narrative,
+        key_insights: state.narrative.key_insights || [],
+        recommended_action: state.narrative.recommended_action,
+        confidence: state.narrative.confidence
+      } : null, "No executive narrative yet.");
       document.getElementById("assumptions").textContent = pretty(state.assumptions, "No assumptions recorded.");
       document.getElementById("options").textContent = pretty(state.options || state.options_generated, "No options generated.");
       document.getElementById("monitoring").textContent = pretty({ risk_signals: state.risk_signals, monitoring_rules: state.monitoring_rules, alert_thresholds: state.alert_thresholds }, "No monitoring rules.");
+      renderTwin(state.digital_twin);
+      document.getElementById("simulationResults").textContent = pretty(state.simulation ? {
+        best_strategy: state.simulation.best_strategy,
+        highest_risk_score: state.simulation.highest_risk_score,
+        risk_threshold: state.simulation.risk_threshold,
+        block_execution: state.simulation.block_execution,
+        scenarios_tested: (state.simulation.simulation_summary || []).map((item) => ({
+          scenario: item.scenario,
+          strategy: item.strategy,
+          risk_score: item.outcome?.risk_score,
+          success_probability: item.outcome?.success_probability,
+          resilience: item.outcome?.resilience,
+          recommendation: item.outcome?.recommendation
+        })),
+        failure_patterns: (state.simulation.simulation_summary || [])
+          .flatMap((item) => item.outcome?.key_failures || [])
+          .slice(0, 8)
+      } : null, "No simulation results yet.");
       document.getElementById("memory").textContent = pretty({
-        similar_past_cases: state.memory?.episodic || [],
-        relevant_facts: state.memory?.semantic || [],
-        learned_strategies: (state.memory?.procedural || []).map((item) => ({
+        similar_past_cases: state.shared_memory?.episodic || state.memory?.episodic || [],
+        relevant_facts: state.shared_memory?.semantic || state.memory?.semantic || [],
+        learned_strategies: (state.shared_memory?.procedural || state.memory?.procedural || []).map((item) => ({
           task_type: item.task_type,
+          content: item.content,
           strategy_steps: item.strategy_steps,
           success_rate: item.success_rate,
           failure_count: item.failure_count,
-          last_used: item.last_used
+          last_used: item.last_used,
+          relevance: item.relevance
         })),
         reflection: state.reflection || {}
       }, "No memory retrieved.");
+      document.getElementById("orgIntelligence").textContent = pretty({
+        recommended_strategy: state.organizational_intelligence?.recommended_strategy,
+        confidence: state.organizational_intelligence?.confidence,
+        based_on: state.organizational_intelligence?.based_on || [],
+        similar_past_cases: (state.shared_memory?.episodic || state.memory?.episodic || []).slice(0, 3),
+        learned_strategies: (state.shared_memory?.procedural || state.memory?.procedural || []).map((item) => ({
+          task_type: item.task_type || item.content?.task_type,
+          success_rate: item.success_rate,
+          failure_count: item.failure_count,
+          relevance: item.relevance
+        })),
+        failure_patterns: (state.shared_memory?.episodic || state.memory?.episodic || [])
+          .filter((item) => item.outcome === "failure" || item.content?.outcome === "failure")
+          .slice(0, 5)
+      }, "No organizational intelligence yet.");
       document.getElementById("roadmap").textContent = pretty(state.implementation_plan, "No roadmap generated.");
       renderStepper(state.current_stage || 1, Boolean(objection));
+    }
+
+    function renderTwin(twin) {
+      document.getElementById("digitalTwin").textContent = pretty(twin ? {
+        current_risk_level: twin.risk_state?.level || "unknown",
+        risk_score: twin.risk_state?.score,
+        environment_signals: twin.environment_state || {},
+        operational_metrics: twin.operational_state?.system_metrics || twin.operational_state || {},
+        last_update_time: twin.last_updated || twin.timestamp
+      } : null, "No digital twin state loaded.");
+    }
+
+    async function loadDigitalTwin() {
+      try {
+        const result = await fetchJson("/api/digital-twin", { method: "GET" });
+        renderTwin(result.digital_twin);
+      } catch {
+        renderTwin(null);
+      }
     }
 
     async function loadEvents(caseId) {
@@ -700,6 +815,7 @@
     }
 
     document.getElementById("runFull").addEventListener("click", () => executeCommand("/api/decision/run", "runFull", "Run full decision cycle", { max_iterations: 10 }));
+    document.getElementById("runSimulation").addEventListener("click", () => executeCommand("/api/decision/simulate", "runSimulation", "Run Simulation Before Decision", { max_iterations: 12, simulation_mode_enabled: true }));
     document.getElementById("runGovernedCycle").addEventListener("click", () => runGovernedDecisionCycle());
     document.getElementById("stressTest").addEventListener("click", () => executeCommand("/api/decision/stress-test", "stressTest", "Stress test current decision", { max_iterations: 8 }));
     document.getElementById("challengeAssumptions").addEventListener("click", () => executeCommand("/api/decision/challenge-assumptions", "challengeAssumptions", "Challenge assumptions", { max_iterations: 8 }));
