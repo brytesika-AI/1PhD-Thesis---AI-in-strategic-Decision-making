@@ -35,6 +35,17 @@ class AgentOrchestrator:
             6: "architect",
             7: "guardian"
         }
+        self.agent_tool_map = {
+            "tracker": "gather_evidence",
+            "induna": "extract_assumptions",
+            "auditor": "root_cause_analysis",
+            "innovator": "generate_options",
+            "challenger": "generate_objections",
+            "architect": "build_implementation_plan",
+            "guardian": "generate_monitoring_rules",
+            "policy_sentinel": "validate_policy",
+            "consensus_tracker": "validate_consensus",
+        }
 
     def _parse_json_safely(self, text: str) -> Dict[str, Any]:
         """Extract and parse JSON from agent output."""
@@ -167,38 +178,23 @@ class AgentOrchestrator:
             return {"error": "Invalid stage ID"}
 
         agent_conf = self.registry.get_agent(agent_id)
-        system_prompt = self.registry.get_system_prompt(agent_id)
-
-        injected_context = f"ENVIRONMENT: {risk_state} | SECTOR: {sector}\n"
-        injected_context += "CURRENT CASE STATE: "
-        injected_context += state.model_dump_json(include={"current_stage", "status", "user_goal", "assumptions"})
-        injected_context += "\nGOVERNANCE: Return valid JSON. Use only declared tools. Human approval gates are mandatory."
-
-        prompt = system_prompt + "\n\n" + injected_context
-
-        response_text = await self.model_client.complete(
-            system_prompt=prompt,
-            messages=[{"role": "user", "content": user_input}],
-            fallback_text='{"error": "Model offline or degraded."}'
+        tool_name = self.agent_tool_map.get(agent_id) or (agent_conf.get("allowed_tools") or [None])[0]
+        parsed_json = self.run_tool(
+            agent_id=agent_id,
+            tool_name=tool_name,
+            case_id=case_id,
+            text=user_input,
+            context=state.model_dump(),
+            risk_state=risk_state,
+            sector=sector,
         )
-
-        parsed_json = self._parse_json_safely(response_text)
         parsed_json = validate_agent_output(agent_conf.get("output_schema", ""), parsed_json)
 
-        tool_results: Dict[str, Any] = {}
+        tool_results: Dict[str, Any] = {tool_name: dict(parsed_json)}
         policy_checks: List[Dict[str, Any]] = []
-        for tool_name in self._requested_tools(parsed_json, agent_conf):
-            tool_result = self.run_tool(
-                agent_id=agent_id,
-                tool_name=tool_name,
-                case_id=case_id,
-                text=user_input,
-                context=state.model_dump(),
-            )
-            tool_results[tool_name] = tool_result
-            policy_check = tool_result.get("policy_check")
-            if policy_check:
-                policy_checks.append(policy_check)
+        policy_check = parsed_json.get("policy_check")
+        if policy_check:
+            policy_checks.append(policy_check)
 
         parsed_json["tool_results"] = tool_results
         tools_used = list(tool_results.keys())
@@ -238,7 +234,7 @@ class AgentOrchestrator:
             "round": stage_id,
             "agent": agent_conf.get("display_name", agent_id),
             "content": parsed_json,
-            "raw": response_text,
+            "raw": parsed_json,
             "case_state": state.model_dump(),
             "audit_ref": audit_ref,
             "approval_required": approval_gate is not None,

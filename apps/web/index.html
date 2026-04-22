@@ -31,6 +31,7 @@
       background:
         linear-gradient(135deg, transparent 25%, var(--ochre) 25% 50%, transparent 50% 75%, var(--terracotta) 75%) 0 0 / 28px 14px,
         linear-gradient(225deg, transparent 25%, var(--terracotta) 25% 50%, transparent 50% 75%, var(--ochre) 75%) 14px 0 / 28px 14px;
+      flex: 0 0 auto;
     }
     header {
       min-height: 82px;
@@ -51,6 +52,8 @@
       margin-top: 7px;
       font-size: 11px;
       font-weight: 700;
+      letter-spacing: .08em;
+      font-variant-caps: all-small-caps;
       text-transform: uppercase;
       opacity: .6;
     }
@@ -121,6 +124,8 @@
       min-height: 126px;
       padding: 18px;
       background: var(--surface);
+      display: grid;
+      align-content: start;
     }
     .metric h2, .panel h2, label {
       margin: 0 0 10px;
@@ -130,11 +135,18 @@
       font-weight: 800;
     }
     .metric .value {
-      font-size: 31px;
+      min-height: 42px;
+      font-size: 34px;
       font-weight: 850;
       line-height: 1.05;
+      overflow-wrap: anywhere;
     }
-    .metric.primary .value { font-size: 44px; color: var(--terracotta); }
+    .metric.primary .value {
+      min-height: 56px;
+      font-size: 52px;
+      color: var(--terracotta);
+      letter-spacing: 0;
+    }
     .metric small {
       display: block;
       max-width: 320px;
@@ -169,6 +181,10 @@
       font-size: 22px;
       font-weight: 800;
       line-height: 1.25;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
     }
     input, textarea, select {
       width: 100%;
@@ -288,7 +304,7 @@
   <header>
     <div>
       <div class="wordmark">AI·SRF</div>
-      <div class="subtitle">Strategic Resilience Framework</div>
+      <div class="subtitle">STRATEGIC RESILIENCE FRAMEWORK</div>
     </div>
     <div class="identity">
       <span id="userName">Not signed in</span>
@@ -301,7 +317,7 @@
   <section id="loginScreen" class="login-screen">
     <form id="loginForm" class="login-card">
       <h1 class="wordmark" style="color: var(--header);">AI·SRF</h1>
-      <p class="subtitle" style="color: var(--header); opacity: .6;">Strategic Resilience Framework</p>
+      <p class="subtitle" style="color: var(--header); opacity: .6;">STRATEGIC RESILIENCE FRAMEWORK</p>
       <label for="apiBaseLogin">Worker API</label>
       <input id="apiBaseLogin" value="https://ai-srf-governance-worker.bryte-sika.workers.dev">
       <label for="email">Email</label>
@@ -386,6 +402,10 @@
             <pre id="monitoring">No monitoring rules.</pre>
           </section>
           <section class="panel wide">
+            <h2>Learning & Memory</h2>
+            <pre id="memory">No memory retrieved.</pre>
+          </section>
+          <section class="panel wide">
             <h2>Implementation Roadmap</h2>
             <pre id="roadmap">No roadmap generated.</pre>
           </section>
@@ -400,7 +420,7 @@
         <div class="caption">This framework does not help. It governs.</div>
         <div class="command-row">
           <button class="command primary-command" id="runFull" type="button">Run full decision cycle</button>
-          <button class="command danger" id="stressTest" type="button">Stress test decision</button>
+          <button class="command danger" id="stressTest" type="button">Stress test current decision</button>
           <button class="command danger" id="challengeAssumptions" type="button">Challenge assumptions</button>
           <button class="command" id="reopenCase" type="button">Re-open case</button>
         </div>
@@ -583,7 +603,7 @@
           document.getElementById("appShell").classList.add("hidden");
           return;
         }
-        document.getElementById("audit").textContent = "Execution failed — see audit trace";
+        document.getElementById("audit").textContent = "Execution failed - see audit trace";
       } finally {
         button.textContent = label;
         applyRoleGates();
@@ -617,7 +637,7 @@
           document.getElementById("appShell").classList.add("hidden");
           return;
         }
-        document.getElementById("audit").textContent = "Execution failed — see audit trace";
+        document.getElementById("audit").textContent = "Execution failed - see audit trace";
       } finally {
         button.innerHTML = "Run Governed Decision Cycle";
         applyRoleGates();
@@ -641,6 +661,18 @@
       document.getElementById("assumptions").textContent = pretty(state.assumptions, "No assumptions recorded.");
       document.getElementById("options").textContent = pretty(state.options || state.options_generated, "No options generated.");
       document.getElementById("monitoring").textContent = pretty({ risk_signals: state.risk_signals, monitoring_rules: state.monitoring_rules, alert_thresholds: state.alert_thresholds }, "No monitoring rules.");
+      document.getElementById("memory").textContent = pretty({
+        similar_past_cases: state.memory?.episodic || [],
+        relevant_facts: state.memory?.semantic || [],
+        learned_strategies: (state.memory?.procedural || []).map((item) => ({
+          task_type: item.task_type,
+          strategy_steps: item.strategy_steps,
+          success_rate: item.success_rate,
+          failure_count: item.failure_count,
+          last_used: item.last_used
+        })),
+        reflection: state.reflection || {}
+      }, "No memory retrieved.");
       document.getElementById("roadmap").textContent = pretty(state.implementation_plan, "No roadmap generated.");
       renderStepper(state.current_stage || 1, Boolean(objection));
     }
@@ -669,7 +701,7 @@
 
     document.getElementById("runFull").addEventListener("click", () => executeCommand("/api/decision/run", "runFull", "Run full decision cycle", { max_iterations: 10 }));
     document.getElementById("runGovernedCycle").addEventListener("click", () => runGovernedDecisionCycle());
-    document.getElementById("stressTest").addEventListener("click", () => executeCommand("/api/decision/stress-test", "stressTest", "Stress test decision", { max_iterations: 8 }));
+    document.getElementById("stressTest").addEventListener("click", () => executeCommand("/api/decision/stress-test", "stressTest", "Stress test current decision", { max_iterations: 8 }));
     document.getElementById("challengeAssumptions").addEventListener("click", () => executeCommand("/api/decision/challenge-assumptions", "challengeAssumptions", "Challenge assumptions", { max_iterations: 8 }));
     document.getElementById("reopenCase").addEventListener("click", () => executeCommand("/api/decision/reopen", "reopenCase", "Re-open case"));
 

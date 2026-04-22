@@ -31,6 +31,12 @@ export function emptyCaseState(caseId, userGoal = "") {
     devil_advocate_findings: {},
     implementation_plan: {},
     monitoring_rules: [],
+    memory: {
+      episodic: [],
+      semantic: [],
+      procedural: []
+    },
+    reflection: {},
     audit_log_refs: [],
     audit_refs: [],
     stage_outputs: {},

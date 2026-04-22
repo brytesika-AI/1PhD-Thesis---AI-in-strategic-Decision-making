@@ -1,6 +1,7 @@
 import { D1AuditLog } from "../../../packages/audit/d1-audit-log.js";
 import { OrchestrationGateway } from "../../../packages/core/orchestration-gateway.js";
 import { DecisionLoop } from "../../../packages/loop/decision-loop.js";
+import { D1MemoryStore } from "../../../packages/memory/d1-memory-store.js";
 import { PolicyEngine } from "../../../packages/policy/policy-engine.js";
 import { listAgents, listAllAgents, listControlAgents, validateAgentRegistry } from "../../../packages/shared/agent-registry.js";
 import { listToolDefinitions } from "../../../packages/skills/index.js";
@@ -182,7 +183,9 @@ function gateway(env) {
     registryDocument,
     caseStore: new D1CaseStore(env.DB),
     auditLog: new D1AuditLog(env.DB),
-    ai: env.AI
+    ai: env.AI,
+    cache: env.CONFIG_CACHE,
+    memoryStore: new D1MemoryStore(env.DB)
   });
 }
 
@@ -192,7 +195,8 @@ function decisionLoop(env) {
     registryDocument,
     caseStore: new D1CaseStore(env.DB),
     auditLog: new D1AuditLog(env.DB),
-    ai: env.AI
+    ai: env.AI,
+    cache: env.CONFIG_CACHE
   });
 }
 

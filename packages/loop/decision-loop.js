@@ -3,13 +3,24 @@ import { ConsensusTracker } from "../core/consensus-tracker.js";
 import { EventBus } from "../events/event-bus.js";
 import { PolicyEngine } from "../policy/policy-engine.js";
 import { PIPELINE_ORDER, getAgent, getAgentForStage } from "../shared/agent-registry.js";
-import { executeToolWithHooks } from "../skills/index.js";
+import { executeToolWithHooks, validateToolOutput } from "../skills/index.js";
 import { emptyCaseState } from "../state/d1-case-store.js";
 import { DecisionQueues } from "./queues.js";
 
-const MAX_JSON_RETRIES = 2;
+const MAX_TOOL_ATTEMPTS = 2;
 const REQUIRED_STAGE_EVENTS = new Set(["agent_start", "agent_end", "state_updated", "consensus_update"]);
 const CONSENSUS_RANK = { unknown: 0, low: 1, medium: 2, high: 3 };
+const AGENT_TOOL_MAP = {
+  tracker: "gather_evidence",
+  induna: "extract_assumptions",
+  auditor: "root_cause_analysis",
+  innovator: "generate_options",
+  challenger: "generate_objections",
+  architect: "build_implementation_plan",
+  guardian: "generate_monitoring_rules",
+  policy_sentinel: "validate_policy",
+  consensus_tracker: "validate_consensus"
+};
 
 const AGENT_OUTPUT_CONTRACTS = {
   tracker: {
@@ -67,23 +78,6 @@ const AGENT_OUTPUT_CONTRACTS = {
     ]
   }
 };
-
-function parseModelJson(text = "") {
-  try {
-    return { ok: true, value: JSON.parse(String(text).trim()) };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error.message,
-      raw: String(text).slice(0, 1000)
-    };
-  }
-}
-
-function requestedTools(output) {
-  const tools = output.tool_calls?.map((call) => call.name) || output.tools_used || output.requested_tools || [];
-  return Array.isArray(tools) ? tools : [tools];
-}
 
 function stageForAgent(agentId) {
   const index = PIPELINE_ORDER.indexOf(agentId);
@@ -158,16 +152,6 @@ function validateAgentOutput(agent, output) {
   return failures.length ? { valid: false, reason: failures.join("; ") } : { valid: true, reason: "Output contract accepted." };
 }
 
-function schemaPromptFor(agent) {
-  const contract = AGENT_OUTPUT_CONTRACTS[agent.id] || {};
-  return JSON.stringify({
-    required: contract.required || [],
-    requiredAny: contract.requiredAny || [],
-    tool_call_required: true,
-    allowed_tools: agent.allowed_tools
-  });
-}
-
 function normalizeCaseState(caseState, caseId, userGoal) {
   const defaults = emptyCaseState(caseId, userGoal);
   return {
@@ -184,11 +168,13 @@ function normalizeCaseState(caseState, caseId, userGoal) {
 }
 
 export class DecisionLoop {
-  constructor({ registryDocument, caseStore, auditLog, ai, maxIterations = 12 }) {
+  constructor({ registryDocument, caseStore, auditLog, ai, cache = null, memoryStore = null, maxIterations = 12 }) {
     this.registryDocument = registryDocument;
     this.caseStore = caseStore;
     this.auditLog = auditLog;
     this.ai = ai;
+    this.cache = cache;
+    this.memoryStore = memoryStore;
     this.maxIterations = maxIterations;
     this.policy = new PolicyEngine(registryDocument);
     this.events = new EventBus({ auditLog });
@@ -218,6 +204,7 @@ export class DecisionLoop {
     caseState.last_modified_by = user?.user_id || caseState.last_modified_by || null;
     caseState.organization_id = caseState.organization_id || user?.organization_id || null;
     caseState.organization_name = caseState.organization_name || user?.organization_name || null;
+    caseState.memory = await this.retrieveMemory({ caseState, caseId, userGoal, user });
 
     const queues = new DecisionQueues(caseState.queues);
     if (queues.isEmpty() && !caseState.loop?.stop_reason) {
@@ -299,6 +286,7 @@ export class DecisionLoop {
       output_summary: caseState.loop.stop_reason,
       raw_payload: { stop_reason: caseState.loop.stop_reason, iterations: caseState.loop.iterations }
     });
+    await this.persistMemory({ caseState, userGoal, user });
     await this.caseStore.saveCase(caseState);
     return {
       case_id: caseId,
@@ -318,6 +306,88 @@ export class DecisionLoop {
       raw_payload: { queue: queueName, action: queued }
     });
     return queued;
+  }
+
+  async retrieveMemory({ caseState, caseId, userGoal, user }) {
+    const emptyMemory = { episodic: [], semantic: [], procedural: [], retrieval: { strategy: "memory_store_unavailable" } };
+    if (!this.memoryStore) return caseState.memory || emptyMemory;
+    try {
+      const memory = await this.memoryStore.retrieve({ caseId, userGoal, user, caseState });
+      await this.events.emit("memory_retrieved", {
+        case_id: caseId,
+        agent_id: "decision_governor",
+        input_summary: "Retrieved memory before decision loop.",
+        output_summary: `${memory.episodic.length} episodic, ${memory.semantic.length} semantic, ${memory.procedural.length} procedural memories.`,
+        raw_payload: memory
+      });
+      return memory;
+    } catch (error) {
+      await this.events.emit("system_error", {
+        case_id: caseId,
+        agent_id: "decision_governor",
+        input_summary: "Memory retrieval failed.",
+        output_summary: error.message,
+        raw_payload: { error: error.message }
+      });
+      return caseState.memory || emptyMemory;
+    }
+  }
+
+  async persistMemory({ caseState, userGoal, user }) {
+    if (!this.memoryStore) return null;
+    const outcome = caseState.status === "escalation_required" || caseState.consensus?.level === "low" ? "failure" : "success";
+    try {
+      const input = {
+        text: userGoal,
+        context: caseState,
+        llm: this.ai,
+        cache: this.cache
+      };
+      const memory = await executeToolWithHooks({
+        agentId: "decision_governor",
+        toolName: "extract_memory",
+        input,
+        policy: this.policy,
+        eventBus: this.events,
+        caseId: caseState.case_id
+      });
+      const reflection = await executeToolWithHooks({
+        agentId: "decision_governor",
+        toolName: "reflect_on_decision",
+        input,
+        policy: this.policy,
+        eventBus: this.events,
+        caseId: caseState.case_id
+      });
+      validateToolOutput(memory);
+      validateToolOutput(reflection);
+      caseState.reflection = reflection;
+      await this.memoryStore.remember({ caseState, memory, reflection, user, outcome });
+      await this.events.emit("reflection_completed", {
+        case_id: caseState.case_id,
+        agent_id: "decision_governor",
+        input_summary: "Decision reflection completed.",
+        output_summary: summarize(reflection),
+        raw_payload: reflection
+      });
+      await this.events.emit("memory_written", {
+        case_id: caseState.case_id,
+        agent_id: "decision_governor",
+        input_summary: "Decision memory written.",
+        output_summary: `Memory stored with ${outcome} outcome.`,
+        raw_payload: { outcome, memory }
+      });
+      return memory;
+    } catch (error) {
+      await this.events.emit("system_error", {
+        case_id: caseState.case_id,
+        agent_id: "decision_governor",
+        input_summary: "Memory write failed.",
+        output_summary: error.message,
+        raw_payload: { error: error.message }
+      });
+      return null;
+    }
   }
 
   selectNextAction(caseState) {
@@ -356,7 +426,13 @@ export class DecisionLoop {
       });
     }
 
-    const output = await this.generateAgentOutput({ agent, caseState, userGoal, riskState, sector });
+    const { output, toolName, toolResults } = await this.executeAgentTool({
+      agent,
+      caseState,
+      userGoal,
+      riskState,
+      sector
+    });
     if (output.__system_error) {
       await this.handleSystemError({ caseState, queues, agentId: agent.id, action, error: output });
       const consensus = this.consensus.update(caseState, { agentId: agent.id, output: { confidence: 0, unresolved_tension: output.reason } });
@@ -383,28 +459,6 @@ export class DecisionLoop {
       return { agent_id: agent.id, output, case_state: caseState };
     }
 
-    const toolNames = this.enforceToolFirst(agent, output);
-    const toolResults = {};
-    for (const toolName of toolNames) {
-      toolResults[toolName] = await executeToolWithHooks({
-        agentId: agent.id,
-        toolName,
-        input: { text: userGoal, context: caseState },
-        policy: this.policy,
-        eventBus: this.events,
-        caseId: caseState.case_id
-      });
-      if (toolResults[toolName]?.status !== "success") {
-        await this.handleSystemError({
-          caseState,
-          queues,
-          agentId: agent.id,
-          action,
-          error: { reason: `Tool ${toolName} failed or was blocked.`, tool_result: toolResults[toolName] }
-        });
-        break;
-      }
-    }
     output.tool_results = toolResults;
 
     await this.updateCaseStateFromAgent(caseState, agent.id, action.stage, output);
@@ -433,7 +487,7 @@ export class DecisionLoop {
       case_id: caseState.case_id,
       agent_id: agent.id,
       output_summary: summarize(output),
-      tools_used: Object.keys(toolResults),
+      tools_used: [toolName],
       raw_payload: output
     });
     if (action.stage) {
@@ -449,59 +503,65 @@ export class DecisionLoop {
     return { agent_id: agent.id, output, case_state: caseState };
   }
 
-  async generateAgentOutput({ agent, caseState, userGoal, riskState, sector }) {
-    const model = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
-    const prompt = [
-      `You are ${agent.display_name}: ${agent.role}.`,
-      "Return ONLY valid JSON matching schema. Do not include markdown, prose, or commentary.",
-      `Output contract: ${schemaPromptFor(agent)}.`,
-      "You must request at least one allowed tool through tools_used or tool_calls.",
-      `Allowed tools: ${agent.allowed_tools.join(", ") || "none"}.`,
-      `Risk state: ${riskState}. Sector: ${sector}.`,
-      `Case state: ${JSON.stringify({
-        current_stage: caseState.current_stage,
-        status: caseState.status,
-        assumptions: caseState.assumptions,
-        objections: caseState.objections,
-        consensus: caseState.consensus
-      })}`
-    ].join("\n");
+  async executeAgentTool({ agent, caseState, userGoal, riskState, sector }) {
+    const toolName = AGENT_TOOL_MAP[agent.id] || agent.allowed_tools?.[0];
+    if (!toolName) {
+      return {
+        toolName: null,
+        toolResults: {},
+        output: {
+          __system_error: true,
+          reason: `No governed tool mapped for ${agent.id}.`,
+          agent_id: agent.id
+        }
+      };
+    }
+
     let lastError = null;
-    for (let attempt = 0; attempt <= MAX_JSON_RETRIES; attempt += 1) {
-      const result = await this.ai.run(model, {
-        messages: [
-          { role: "system", content: attempt === 0 ? prompt : `${prompt}\nReturn ONLY valid JSON matching schema.` },
-          { role: "user", content: userGoal }
-        ],
-        max_tokens: 1400
-      });
-      const parsed = parseModelJson(result?.response || "{}");
-      if (!parsed.ok) {
-        lastError = parsed.error;
+    for (let attempt = 1; attempt <= MAX_TOOL_ATTEMPTS; attempt += 1) {
+      try {
+        const result = await executeToolWithHooks({
+          agentId: agent.id,
+          toolName,
+          input: {
+            text: userGoal,
+            context: { ...caseState, risk_state: riskState, sector },
+            llm: this.ai,
+            cache: this.cache
+          },
+          policy: this.policy,
+          eventBus: this.events,
+          caseId: caseState.case_id
+        });
+        if (result?.status === "blocked" || result?.status === "error") {
+          lastError = result.message || `Tool ${toolName} failed or was blocked.`;
+          continue;
+        }
+        validateToolOutput(result);
+        const validation = validateAgentOutput(agent, result);
+        if (!validation.valid) {
+          lastError = validation.reason;
+          continue;
+        }
+        return {
+          toolName,
+          toolResults: { [toolName]: { ...result } },
+          output: { ...result }
+        };
+      } catch (error) {
+        lastError = error.message;
         continue;
       }
-      const validation = validateAgentOutput(agent, parsed.value);
-      if (!validation.valid) {
-        lastError = validation.reason;
-        continue;
-      }
-      return parsed.value;
     }
     return {
-      __system_error: true,
-      reason: `Invalid JSON or schema after ${MAX_JSON_RETRIES} retries: ${lastError}`,
-      agent_id: agent.id
+      toolName,
+      toolResults: {},
+      output: {
+        __system_error: true,
+        reason: `Tool ${toolName} failed after ${MAX_TOOL_ATTEMPTS} attempts: ${lastError}`,
+        agent_id: agent.id
+      }
     };
-  }
-
-  enforceToolFirst(agent, output) {
-    const toolNames = requestedTools(output).filter(Boolean);
-    if (toolNames.length > 0) return toolNames;
-    const fallbackTool = agent.allowed_tools?.[0];
-    if (!fallbackTool) return [];
-    output.tools_used = [fallbackTool];
-    output.runtime_corrections = [...(output.runtime_corrections || []), "tool_first_default_applied"];
-    return [fallbackTool];
   }
 
   validateRequiredEvents(requiredEvents, agentId) {
@@ -559,9 +619,19 @@ export class DecisionLoop {
     } else if (agentId === "challenger") {
       caseState.verification_chain.devil_advocate_validated = true;
       const stressTests = output.stress_tests || [];
-      const fallbackClaim = output.objection || stressTests.find((item) => item.risk)?.risk || "Key assumption lacks sufficient validation under current risk conditions";
+      if (!Array.isArray(output.objections) || output.objections.length === 0) {
+        output.objections = [
+          {
+            id: "obj_fallback",
+            text: "Critical assumptions lack adversarial validation",
+            severity: "high"
+          }
+        ];
+      }
+      const fallbackClaim = output.objection || output.objections[0]?.text || stressTests.find((item) => item.risk)?.risk || "Key assumption lacks sufficient validation under current risk conditions";
       output.objection = fallbackClaim;
       caseState.devil_advocate_findings = {
+        objections: output.objections,
         stress_tests: stressTests,
         verdict: output.verdict || output.finding || "",
         confidence: output.confidence

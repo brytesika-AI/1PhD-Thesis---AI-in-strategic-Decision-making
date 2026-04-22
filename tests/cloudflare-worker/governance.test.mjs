@@ -4,6 +4,7 @@ import test from "node:test";
 import { D1AuditLog } from "../../packages/audit/d1-audit-log.js";
 import { OrchestrationGateway } from "../../packages/core/orchestration-gateway.js";
 import { DecisionLoop } from "../../packages/loop/decision-loop.js";
+import { D1MemoryStore } from "../../packages/memory/d1-memory-store.js";
 import { PolicyEngine } from "../../packages/policy/policy-engine.js";
 import { getAgentForStage, listAgents } from "../../packages/shared/agent-registry.js";
 import { D1CaseStore, emptyCaseState } from "../../packages/state/d1-case-store.js";
@@ -27,6 +28,9 @@ class MockD1 {
   constructor() {
     this.cases = new Map();
     this.auditEvents = [];
+    this.episodicMemory = [];
+    this.semanticMemory = [];
+    this.proceduralMemory = new Map();
   }
 
   prepare(sql) {
@@ -63,6 +67,30 @@ class MockStatement {
         results: this.db.auditEvents
           .filter((event) => event.case_id === this.params[0])
           .sort((left, right) => left.timestamp.localeCompare(right.timestamp))
+      };
+    }
+    if (this.sql.includes("FROM episodic_memory")) {
+      const [organizationId, caseId] = this.params;
+      return {
+        results: this.db.episodicMemory
+          .filter((row) => (row.organization_id || "__global__") === organizationId && row.case_id !== caseId)
+          .sort((left, right) => right.timestamp.localeCompare(left.timestamp))
+      };
+    }
+    if (this.sql.includes("FROM semantic_memory")) {
+      const [organizationId] = this.params;
+      return {
+        results: this.db.semanticMemory
+          .filter((row) => (row.organization_id || "__global__") === organizationId)
+          .sort((left, right) => right.created_at.localeCompare(left.created_at))
+      };
+    }
+    if (this.sql.includes("FROM procedural_memory")) {
+      const [organizationId] = this.params;
+      return {
+        results: [...this.db.proceduralMemory.values()]
+          .filter((row) => (row.organization_id || "__global__") === organizationId)
+          .sort((left, right) => Number(right.success_rate) - Number(left.success_rate) || Number(left.failure_count) - Number(right.failure_count))
       };
     }
     return { results: [] };
@@ -103,6 +131,31 @@ class MockStatement {
         human_approval,
         raw_payload
       });
+      return { success: true };
+    }
+    if (this.sql.includes("INSERT INTO episodic_memory")) {
+      const [id, case_id, user_id, organization_id, case_type, timestamp, event_type, input, output, outcome, confidence] = this.params;
+      this.db.episodicMemory.push({ id, case_id, user_id, organization_id, case_type, timestamp, event_type, input, output, outcome, confidence });
+      return { success: true };
+    }
+    if (this.sql.includes("INSERT INTO semantic_memory")) {
+      const [id, user_id, organization_id, entity, fact, source_case_id, confidence, created_at] = this.params;
+      this.db.semanticMemory.push({ id, user_id, organization_id, entity, fact, source_case_id, confidence, created_at });
+      return { success: true };
+    }
+    if (this.sql.includes("INSERT INTO procedural_memory")) {
+      const [id, user_id, organization_id, task_type, strategy_steps, success_rate, failure_count, last_used, successAdjustment, failureDelta] = this.params;
+      const key = `${organization_id || "__global__"}:${task_type}`;
+      const existing = this.db.proceduralMemory.get(key);
+      if (existing) {
+        existing.user_id = user_id;
+        existing.strategy_steps = strategy_steps;
+        existing.success_rate = Math.min(0.99, Math.max(0.01, ((Number(existing.success_rate) + Number(success_rate)) / 2) + Number(successAdjustment)));
+        existing.failure_count = Number(existing.failure_count || 0) + Number(failureDelta || 0);
+        existing.last_used = last_used;
+      } else {
+        this.db.proceduralMemory.set(key, { id, user_id, organization_id, task_type, strategy_steps, success_rate, failure_count, last_used });
+      }
       return { success: true };
     }
     return { success: true };
@@ -173,13 +226,17 @@ test("agent registry loads all AI-SRF and control agents with required fields an
   const agents = listAgents(agentRegistry);
   const allAgents = Object.values(agentRegistry.agents);
   const knownSkills = new Set([
-    "swot_analysis",
-    "five_whys",
     "root_cause_analysis",
-    "policy_compliance_scan",
-    "scenario_planning",
-    "resilience_scoring",
-    "implementation_plan_builder"
+    "gather_evidence",
+    "extract_assumptions",
+    "generate_options",
+    "generate_objections",
+    "build_implementation_plan",
+    "generate_monitoring_rules",
+    "validate_policy",
+    "validate_consensus",
+    "extract_memory",
+    "reflect_on_decision"
   ]);
 
   assert.equal(agents.length, 7);
@@ -277,8 +334,8 @@ test("decision loop routes Devil's Advocate objections through debate queue", as
 test("policy engine blocks unauthorized tools and blocked sandbox actions", () => {
   const policy = new PolicyEngine(agentRegistry);
 
-  assert.equal(policy.validateToolAccess("induna", "five_whys").allowed, true);
-  assert.equal(policy.validateToolAccess("tracker", "implementation_plan_builder").allowed, false);
+  assert.equal(policy.validateToolAccess("induna", "extract_assumptions").allowed, true);
+  assert.equal(policy.validateToolAccess("tracker", "build_implementation_plan").allowed, false);
   assert.equal(policy.validateToolAccess("tracker", "shell").allowed, false);
   assert.equal(policy.validateUploadMetadata("board-pack.pdf", 2048).allowed, true);
   assert.equal(policy.validateUploadMetadata("payload.ps1", 2048).allowed, false);
@@ -571,6 +628,53 @@ test("Cloudflare adapter boundaries use mockable D1, KV, and R2 shapes", async (
   assert.equal(await kv.get("registry_version"), "test");
   assert.equal(await r2.get("evidence/CASE-BOUNDARY.json"), '{"source":"synthetic"}');
   assert.equal((await store.getCase("CASE-BOUNDARY")).case_id, "CASE-BOUNDARY");
+});
+
+test("decision loop retrieves and writes episodic, semantic, and procedural memory", async () => {
+  const db = new MockD1();
+  const caseStore = new D1CaseStore(db);
+  const auditLog = new D1AuditLog(db);
+  const memoryStore = new D1MemoryStore(db);
+  db.proceduralMemory.set("org-memory:cloud_migration", {
+    id: "proc-existing",
+    user_id: "access:analyst@example.com",
+    organization_id: "org-memory",
+    task_type: "cloud_migration",
+    strategy_steps: JSON.stringify(["migrate with backup", "verify controls", "monitor drift"]),
+    success_rate: 0.6,
+    failure_count: 1,
+    last_used: "2026-04-20T10:00:00.000Z"
+  });
+  const loop = new DecisionLoop({
+    registryDocument: agentRegistry,
+    caseStore,
+    auditLog,
+    ai: null,
+    memoryStore,
+    maxIterations: 10
+  });
+
+  const result = await loop.run({
+    caseId: "CASE-MEMORY",
+    userGoal: "Decide whether to migrate customer analytics workloads to cloud.",
+    maxIterations: 10,
+    user: {
+      user_id: "access:analyst@example.com",
+      organization_id: "org-memory",
+      organization_name: "Org Memory"
+    }
+  });
+  const learned = db.proceduralMemory.get("org-memory:cloud_migration");
+  const replay = await auditLog.replaySummary("CASE-MEMORY");
+
+  assert.equal(result.stop_reason, "decision_reached");
+  assert.equal(result.case_state.memory.procedural[0].task_type, "cloud_migration");
+  assert.ok(db.episodicMemory.length >= 1);
+  assert.ok(db.semanticMemory.length >= 1);
+  assert.ok(Number(learned.success_rate) > 0.6);
+  assert.ok(replay.events.some((event) => event.event_type === "memory_retrieved"));
+  assert.ok(replay.events.some((event) => event.event_type === "memory_written"));
+  assert.ok(replay.events.some((event) => event.event_type === "reflection_completed"));
 });
 
 test("production assumptions point to Cloudflare rather than an always-on server", async () => {

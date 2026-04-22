@@ -9,7 +9,7 @@ const BLOCKED_TOOLS = new Set([
 const APPROVAL_REQUIRED_TOOLS = new Set([
   "external_search",
   "uploaded_file_ingest",
-  "implementation_plan_builder"
+  "build_implementation_plan"
 ]);
 
 const BLOCKED_EXTERNAL_HOSTS = [

@@ -51,6 +51,9 @@ def test_cloudflare_worker_artifacts_are_present_and_secret_safe() -> None:
     assert "NEWSAPI_KEY" not in legacy_wrangler
     assert "CREATE TABLE IF NOT EXISTS decision_cases" in schema
     assert "CREATE TABLE IF NOT EXISTS audit_events" in schema
+    assert "CREATE TABLE IF NOT EXISTS episodic_memory" in schema
+    assert "CREATE TABLE IF NOT EXISTS semantic_memory" in schema
+    assert "CREATE TABLE IF NOT EXISTS procedural_memory" in schema
     assert "idx_audit_events_case_time" in schema
 
 
@@ -88,7 +91,7 @@ def test_cloudflare_pages_workspace_contains_required_panels() -> None:
 
     for label in [
         "AI·SRF",
-        "Strategic Resilience Framework",
+        "STRATEGIC RESILIENCE FRAMEWORK",
         "Risk State",
         "Board Brief",
         "This framework does not help. It governs.",
@@ -102,6 +105,7 @@ def test_cloudflare_pages_workspace_contains_required_panels() -> None:
         "Implementation Roadmap",
         "Audit Trace",
         "Monitoring",
+        "Learning & Memory",
         "Strongest Objection",
         "Consensus Level",
         "Implementation Readiness",

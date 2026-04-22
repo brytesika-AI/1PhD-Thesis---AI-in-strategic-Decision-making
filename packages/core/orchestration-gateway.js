@@ -1,26 +1,36 @@
 import { getAgentForStage, nextAgentId } from "../shared/agent-registry.js";
 import { EventHooks } from "./event-hooks.js";
+import { EventBus } from "../events/event-bus.js";
 import { PolicyEngine } from "../policy/policy-engine.js";
-import { invokeSkill } from "../skills/index.js";
+import { executeToolWithHooks, validateToolOutput } from "../skills/index.js";
 import { emptyCaseState } from "../state/d1-case-store.js";
 
 function summarize(value, max = 240) {
   return JSON.stringify(value || {}).slice(0, max);
 }
 
-function requestedTools(payload) {
-  const tools = payload?.tools_used || payload?.requested_tools || [];
-  return Array.isArray(tools) ? tools : [tools];
-}
+const AGENT_TOOL_MAP = {
+  tracker: "gather_evidence",
+  induna: "extract_assumptions",
+  auditor: "root_cause_analysis",
+  innovator: "generate_options",
+  challenger: "generate_objections",
+  architect: "build_implementation_plan",
+  guardian: "generate_monitoring_rules",
+  policy_sentinel: "validate_policy",
+  consensus_tracker: "validate_consensus"
+};
 
 export class OrchestrationGateway {
-  constructor({ registryDocument, caseStore, auditLog, ai }) {
+  constructor({ registryDocument, caseStore, auditLog, ai, cache = null }) {
     this.registryDocument = registryDocument;
     this.caseStore = caseStore;
     this.auditLog = auditLog;
     this.ai = ai;
+    this.cache = cache;
     this.policy = new PolicyEngine(registryDocument);
     this.hooks = new EventHooks({ auditLog, caseStore });
+    this.events = new EventBus({ auditLog });
   }
 
   async executeStage({ caseId, stage, userGoal, riskState = "ELEVATED", sector = "general", user = null }) {
@@ -61,45 +71,25 @@ export class OrchestrationGateway {
       };
     }
 
-    const systemPrompt = [
-      `You are ${agent.display_name}: ${agent.role}.`,
-      `Return JSON matching ${agent.output_schema}.`,
-      `Allowed tools: ${agent.allowed_tools.join(", ") || "none"}.`,
-      `Risk state: ${riskState}. Sector: ${sector}.`,
-      `Current case state: ${JSON.stringify({
-        current_stage: caseState.current_stage,
-        status: caseState.status,
-        user_goal: caseState.user_goal,
-        assumptions: caseState.assumptions
-      })}`
-    ].join("\n");
-
-    const model = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
-    const aiResult = await this.ai.run(model, {
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userGoal }
-      ],
-      max_tokens: 1800
-    });
-
-    const outputText = aiResult?.response || "{}";
-    let output;
-    try {
-      output = JSON.parse(outputText.match(/\{[\s\S]*\}/)?.[0] || outputText);
-    } catch {
-      output = { finding: "Model returned non-JSON output.", raw: outputText };
-    }
-
+    const toolName = AGENT_TOOL_MAP[agent.id] || agent.allowed_tools[0];
+    const output = validateToolOutput(await executeToolWithHooks({
+      agentId: agent.id,
+      toolName,
+      input: {
+        text: userGoal,
+        context: { ...caseState, risk_state: riskState, sector },
+        llm: this.ai,
+        cache: this.cache
+      },
+      policy: this.policy,
+      eventBus: this.events,
+      caseId
+    }));
     const toolResults = {};
     const policyChecks = [];
-    for (const toolName of requestedTools(output)) {
-      const check = this.policy.buildToolPolicyCheck(agent.id, toolName);
-      policyChecks.push(check);
-      if (check.allowed) {
-        toolResults[toolName] = invokeSkill(toolName, { text: userGoal, context: caseState });
-      }
-    }
+    toolResults[toolName] = { ...output };
+    if (output.policy_check) policyChecks.push(output.policy_check);
+    if (output.after_policy_check) policyChecks.push(output.after_policy_check);
 
     const handoffTarget = nextAgentId(this.registryDocument, agent.id);
     policyChecks.push({
@@ -116,7 +106,7 @@ export class OrchestrationGateway {
       input_summary: String(userGoal).slice(0, 160),
       output_summary: summarize(output),
       tools_used: Object.keys(toolResults),
-      model_used: model,
+      model_used: "tool-orchestrated",
       policy_checks: policyChecks,
       human_approval: this.policy.requiresApproval(agent.id),
       raw_payload: output

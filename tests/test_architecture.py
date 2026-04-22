@@ -46,11 +46,11 @@ def test_agent_registry_loads_all_ai_srf_agents(registry: AgentRegistry) -> None
 
 
 def test_policy_enforces_allowed_tools_and_blocks_by_default(policy: PolicyEngine) -> None:
-    allowed, msg = policy.validate_tool_access("induna", "five_whys")
+    allowed, msg = policy.validate_tool_access("induna", "extract_assumptions")
     assert allowed is True
     assert msg == "Allowed"
 
-    allowed, msg = policy.validate_tool_access("tracker", "implementation_plan_builder")
+    allowed, msg = policy.validate_tool_access("tracker", "build_implementation_plan")
     assert allowed is False
     assert "BLOCKED" in msg
 
@@ -138,11 +138,11 @@ def test_stage_to_stage_handoff_and_state_persistence(monkeypatch: pytest.Monkey
 
         assert result["round"] == 1
         assert result["agent"] == "The Tracker"
-        assert result["content"]["finding"] == "Mocked environmental finding."
-        assert result["content"]["tool_results"]["policy_compliance_scan"]["status"] == "success"
+        assert result["content"]["finding"] == "Evidence gathered from governed case context."
+        assert result["content"]["tool_results"]["gather_evidence"]["finding"] == "Evidence gathered from governed case context."
         assert saved is not None
         assert saved.current_stage == 2
-        assert saved.evidence_bundle["signals"][0]["name"] == "regulatory change"
+        assert saved.evidence_bundle["signals"][0]["name"] == "strategic_context"
         assert saved.audit_log_refs
 
     asyncio.run(scenario())
@@ -188,10 +188,10 @@ def test_end_to_end_strategic_case_simulation(monkeypatch: pytest.MonkeyPatch) -
 
         assert state is not None
         assert state.status == "monitoring"
-        assert state.assumptions == ["Board appetite is moderate."]
-        assert state.options_generated[0]["id"] == "A"
-        assert state.implementation_plan["track_a"] == "controls"
-        assert state.monitoring_rules[0]["metric"] == "decision_alpha"
+        assert "Board approval requires auditable evidence" in state.assumptions
+        assert state.options_generated[0]["id"] == "opt_1"
+        assert state.implementation_plan["phase_1"] == "Confirm controls"
+        assert state.monitoring_rules[0]["metric"] == "decision_drift"
         assert replay["event_count"] >= 7
         assert "tracker" in replay["agents"]
         assert all(gate.status == "approved" for gate in state.approval_gates)

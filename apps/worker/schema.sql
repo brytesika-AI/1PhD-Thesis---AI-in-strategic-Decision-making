@@ -55,3 +55,51 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX IF NOT EXISTS idx_users_org
 ON users(organization_id, email);
+
+CREATE TABLE IF NOT EXISTS episodic_memory (
+    id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL,
+    user_id TEXT,
+    organization_id TEXT,
+    case_type TEXT,
+    timestamp TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    input TEXT NOT NULL DEFAULT '{}',
+    output TEXT NOT NULL DEFAULT '{}',
+    outcome TEXT NOT NULL CHECK(outcome IN ('success', 'failure')),
+    confidence REAL NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_episodic_memory_org_case_type_time
+ON episodic_memory(organization_id, case_type, timestamp);
+
+CREATE TABLE IF NOT EXISTS semantic_memory (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    organization_id TEXT,
+    entity TEXT NOT NULL,
+    fact TEXT NOT NULL,
+    source_case_id TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_semantic_memory_org_entity
+ON semantic_memory(organization_id, entity, created_at);
+
+CREATE TABLE IF NOT EXISTS procedural_memory (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    organization_id TEXT,
+    task_type TEXT NOT NULL,
+    strategy_steps TEXT NOT NULL DEFAULT '[]',
+    success_rate REAL NOT NULL DEFAULT 0.5,
+    failure_count INTEGER NOT NULL DEFAULT 0,
+    last_used TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_procedural_memory_org_task
+ON procedural_memory(organization_id, task_type);
+
+CREATE INDEX IF NOT EXISTS idx_procedural_memory_org_quality
+ON procedural_memory(organization_id, success_rate, failure_count, last_used);
