@@ -3,19 +3,20 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AI-SRF Strategic Decision OS</title>
-  <meta name="description" content="AI-SRF executive strategic resilience workspace.">
+  <title>AI-SRF Executive Decision OS</title>
+  <meta name="description" content="AI-SRF executive decision command center.">
   <style>
     :root {
-      --header: #0D1F33;
-      --ochre: #C8922A;
-      --terracotta: #A8401E;
+      --header: #102136;
+      --gold: #C8922A;
+      --red: #A8401E;
       --green: #2A6645;
       --ink: #111821;
-      --muted: #64707d;
+      --muted: #66717d;
       --line: #dce2e8;
       --bg: #f6f8fa;
       --surface: #ffffff;
+      --soft: #eef3f6;
     }
     * { box-sizing: border-box; }
     body {
@@ -25,204 +26,274 @@
       font-family: Inter, "IBM Plex Sans", Arial, sans-serif;
       letter-spacing: 0;
     }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .58; }
     .pattern {
-      height: 14px;
-      width: 100%;
+      height: 10px;
       background:
-        linear-gradient(135deg, transparent 25%, var(--ochre) 25% 50%, transparent 50% 75%, var(--terracotta) 75%) 0 0 / 28px 14px,
-        linear-gradient(225deg, transparent 25%, var(--terracotta) 25% 50%, transparent 50% 75%, var(--ochre) 75%) 14px 0 / 28px 14px;
-      flex: 0 0 auto;
+        linear-gradient(135deg, transparent 25%, var(--gold) 25% 50%, transparent 50% 75%, var(--red) 75%) 0 0 / 28px 10px,
+        linear-gradient(225deg, transparent 25%, var(--red) 25% 50%, transparent 50% 75%, var(--gold) 75%) 14px 0 / 28px 10px;
     }
     header {
-      min-height: 82px;
+      min-height: 74px;
       display: grid;
       grid-template-columns: 1fr auto;
       gap: 18px;
       align-items: center;
-      padding: 18px 24px;
+      padding: 16px 24px;
       background: var(--header);
-      color: #ffffff;
+      color: #fff;
     }
-    .wordmark {
-      font-size: 28px;
-      font-weight: 850;
-      line-height: 1;
-    }
+    .wordmark { font-size: 27px; font-weight: 850; line-height: 1; }
     .subtitle {
       margin-top: 7px;
+      color: rgba(255,255,255,.64);
       font-size: 11px;
-      font-weight: 700;
-      letter-spacing: .08em;
-      font-variant-caps: all-small-caps;
+      font-weight: 800;
       text-transform: uppercase;
-      opacity: .6;
     }
     .identity {
       display: flex;
+      justify-content: flex-end;
       align-items: center;
       gap: 10px;
       flex-wrap: wrap;
-      justify-content: flex-end;
       font-size: 12px;
     }
     .identity span, .identity button {
       min-height: 30px;
-      border: 1px solid rgba(255,255,255,.2);
+      border: 1px solid rgba(255,255,255,.22);
       border-radius: 8px;
       padding: 7px 10px;
       background: transparent;
-      color: #ffffff;
-      font: inherit;
+      color: #fff;
     }
-    .identity button { cursor: pointer; }
-    .stepper {
+    .login-screen {
+      min-height: calc(100vh - 94px);
       display: grid;
-      grid-template-columns: repeat(7, minmax(132px, 1fr));
-      gap: 1px;
-      background: var(--line);
-      overflow-x: auto;
+      place-items: center;
+      padding: 28px;
     }
-    .step {
-      min-height: 68px;
-      padding: 10px 12px;
-      background: var(--surface);
-      border-top: 4px solid transparent;
-    }
-    .step strong { display: block; font-size: 12px; }
-    .step span { display: block; margin-top: 5px; font-size: 12px; color: var(--muted); }
-    .step.active {
-      border-top-color: var(--ochre);
-      box-shadow: inset 0 0 0 1px rgba(200,146,42,.45), 0 0 18px rgba(200,146,42,.22);
-    }
-    .step.done { border-top-color: var(--green); }
-    .step.risk { border-top-color: var(--terracotta); }
-    .devil-tag {
-      position: fixed;
-      right: 18px;
-      bottom: 18px;
-      z-index: 4;
+    .login-card {
+      width: min(440px, 100%);
+      border: 1px solid var(--line);
+      border-top: 5px solid var(--gold);
       border-radius: 8px;
-      padding: 9px 12px;
-      background: var(--terracotta);
-      color: #ffffff;
+      padding: 24px;
+      background: var(--surface);
+    }
+    label {
+      display: block;
+      margin: 0 0 7px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 850;
+      text-transform: uppercase;
+    }
+    input, select, textarea {
+      width: 100%;
+      margin: 0 0 13px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 11px;
+      background: #fff;
+      color: var(--ink);
+      font-size: 14px;
+    }
+    textarea { min-height: 142px; resize: vertical; }
+    .hidden { display: none; }
+    .shell {
+      min-height: calc(100vh - 94px);
+      display: grid;
+      grid-template-columns: 330px minmax(0, 1fr);
+    }
+    aside {
+      border-right: 1px solid var(--line);
+      padding: 18px;
+      background: var(--surface);
+    }
+    .control-note {
+      margin: 2px 0 14px;
+      color: var(--muted);
       font-size: 12px;
-      font-weight: 800;
-      box-shadow: 0 10px 30px rgba(168,64,30,.24);
+      line-height: 1.45;
     }
-    main {
+    .main {
+      min-width: 0;
       display: grid;
-      grid-template-rows: auto 1fr auto;
-      min-height: calc(100vh - 178px);
-    }
-    .metrics {
-      display: grid;
-      grid-template-columns: 1.35fr 1fr 1fr 1fr;
       gap: 1px;
       background: var(--line);
     }
-    .metric {
-      min-height: 126px;
+    .section {
+      padding: 22px 24px;
+      background: var(--surface);
+    }
+    .section h2 {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 850;
+      text-transform: uppercase;
+    }
+    .verdict {
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      display: grid;
+      grid-template-columns: minmax(240px, 1.15fr) repeat(4, minmax(130px, .65fr));
+      gap: 1px;
+      padding: 0;
+      background: var(--line);
+    }
+    .verdict-card {
+      min-height: 128px;
       padding: 18px;
       background: var(--surface);
       display: grid;
       align-content: start;
+      gap: 7px;
     }
-    .metric h2, .panel h2, label {
-      margin: 0 0 10px;
-      font-size: 11px;
+    .verdict-card h2 {
+      margin: 0;
       color: var(--muted);
-      text-transform: uppercase;
-      font-weight: 800;
-    }
-    .metric .value {
-      min-height: 42px;
-      font-size: 34px;
+      font-size: 11px;
       font-weight: 850;
-      line-height: 1.05;
+      text-transform: uppercase;
+    }
+    .verdict-action {
+      color: var(--red);
+      font-size: 48px;
+      font-weight: 900;
+      line-height: .98;
       overflow-wrap: anywhere;
     }
-    .metric.primary .value {
-      min-height: 56px;
-      font-size: 52px;
-      color: var(--terracotta);
-      letter-spacing: 0;
+    .metric-value {
+      font-size: 31px;
+      font-weight: 850;
+      line-height: 1.08;
+      overflow-wrap: anywhere;
     }
-    .metric small {
-      display: block;
-      max-width: 320px;
-      margin-top: 8px;
+    .card-note {
       color: var(--muted);
       font-size: 12px;
-      line-height: 1.3;
+      line-height: 1.35;
     }
-    .workspace {
-      display: grid;
-      grid-template-columns: 360px 1fr;
-      gap: 1px;
-      background: var(--line);
+    .narrative-text {
+      max-width: 1040px;
+      font-size: 18px;
+      line-height: 1.55;
     }
-    aside, .panel {
-      background: var(--surface);
-      padding: 18px;
-    }
-    .panel-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(220px, 1fr));
-      gap: 1px;
-      background: var(--line);
-    }
-    .panel.wide { grid-column: span 2; }
-    .board-brief {
-      border-left: 5px solid var(--ochre);
-      min-height: 140px;
-    }
-    .brief-verdict {
-      max-width: 920px;
+    .summary-line {
+      margin-bottom: 14px;
       font-size: 22px;
-      font-weight: 800;
-      line-height: 1.25;
-      display: -webkit-box;
-      -webkit-line-clamp: 3;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
+      font-weight: 850;
+      line-height: 1.32;
     }
-    input, textarea, select {
-      width: 100%;
-      margin-bottom: 12px;
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .plain-card {
+      min-height: 124px;
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 10px;
-      background: #ffffff;
-      color: var(--ink);
-      font: 14px Inter, "IBM Plex Sans", Arial, sans-serif;
+      padding: 16px;
+      background: #fff;
     }
-    textarea { min-height: 148px; resize: vertical; }
-    button.command, button.primary {
+    .plain-card strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 15px;
+    }
+    .plain-card p, .plain-card li {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    .plain-card p { margin: 0; }
+    ul.clean {
+      margin: 0;
+      padding-left: 18px;
+    }
+    .risk-band {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .commands {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .command, .primary, .approval {
       min-height: 42px;
       border: 0;
       border-radius: 8px;
       padding: 10px 12px;
       background: var(--header);
-      color: #ffffff;
-      font: 800 13px Inter, "IBM Plex Sans", Arial, sans-serif;
-      cursor: pointer;
+      color: #fff;
+      font-weight: 850;
     }
-    button.primary { width: 100%; background: var(--ochre); color: #111821; }
-    button.run-primary {
+    .primary {
       width: 100%;
-      min-height: 46px;
-      margin-top: 16px;
-      border: 0;
+      background: var(--gold);
+      color: var(--ink);
+    }
+    .approval.approve { background: var(--green); }
+    .approval.reject { background: var(--red); }
+    .secondary { background: var(--soft); color: var(--ink); border: 1px solid var(--line); }
+    .status-pill {
+      display: inline-flex;
+      width: fit-content;
+      min-height: 28px;
+      align-items: center;
       border-radius: 8px;
-      padding: 12px 14px;
-      background: var(--ochre);
-      color: #111821;
-      font: 850 14px Inter, "IBM Plex Sans", Arial, sans-serif;
+      padding: 6px 9px;
+      background: var(--soft);
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 850;
+      text-transform: uppercase;
+    }
+    .status-pill.pending { background: #fff4d9; color: #7a5200; }
+    .status-pill.approved { background: #e4f1e9; color: var(--green); }
+    .status-pill.rejected { background: #f9e7e2; color: var(--red); }
+    details.drawer {
+      border-top: 1px solid var(--line);
+      background: var(--surface);
+    }
+    details.drawer > summary {
+      min-height: 54px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 24px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 850;
+      text-transform: uppercase;
       cursor: pointer;
     }
-    button.run-primary:disabled {
-      opacity: .55;
-      cursor: not-allowed;
+    .technical-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      padding: 0 24px 24px;
+    }
+    pre {
+      max-height: 360px;
+      overflow: auto;
+      margin: 0;
+      border-radius: 8px;
+      padding: 12px;
+      background: #101820;
+      color: #edf2f7;
+      font: 12px Consolas, "IBM Plex Mono", monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
     }
     .spinner {
       display: inline-block;
@@ -230,72 +301,23 @@
       height: 14px;
       margin-right: 8px;
       border: 2px solid rgba(17,24,33,.3);
-      border-top-color: #111821;
+      border-top-color: var(--ink);
       border-radius: 50%;
       vertical-align: -2px;
       animation: spin .8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    button.danger { background: var(--terracotta); color: #ffffff; }
-    button.success { background: var(--green); color: #ffffff; }
-    button.command.primary-command { background: var(--ochre); color: #111821; }
-    pre {
-      margin: 0;
-      white-space: pre-wrap;
-      word-break: break-word;
-      font: 12px "IBM Plex Mono", Consolas, monospace;
-      color: var(--ink);
-    }
-    .trace {
-      max-height: 330px;
-      overflow: auto;
-      border-radius: 8px;
-      padding: 12px;
-      background: #101820;
-      color: #edf2f7;
-    }
-    .commands {
-      border-top: 1px solid var(--line);
-      background: var(--surface);
-      padding: 16px 18px;
-    }
-    .caption {
-      margin-bottom: 12px;
-      font-size: 12px;
-      font-weight: 800;
-      color: var(--muted);
-      text-transform: uppercase;
-    }
-    .command-row {
-      display: grid;
-      grid-template-columns: repeat(5, minmax(160px, 1fr));
-      gap: 8px;
-    }
-    .login-screen {
-      min-height: calc(100vh - 110px);
-      display: grid;
-      place-items: center;
-      padding: 28px;
-      background: var(--bg);
-    }
-    .login-card {
-      width: min(440px, 100%);
-      background: var(--surface);
-      border: 1px solid var(--line);
-      border-top: 5px solid var(--ochre);
-      border-radius: 8px;
-      padding: 24px;
-    }
-    .hidden { display: none; }
     @media (max-width: 1180px) {
-      .metrics, .workspace, .panel-grid { grid-template-columns: 1fr; }
-      .panel.wide { grid-column: span 1; }
-      .command-row { grid-template-columns: repeat(2, 1fr); }
+      .shell, .verdict, .grid-3, .risk-band { grid-template-columns: 1fr; }
+      .verdict { position: static; }
+      .technical-grid { grid-template-columns: 1fr; }
     }
     @media (max-width: 680px) {
       header { grid-template-columns: 1fr; }
       .identity { justify-content: flex-start; }
-      .command-row { grid-template-columns: 1fr; }
+      .commands { grid-template-columns: 1fr; }
+      .verdict-action { font-size: 40px; }
+      .section { padding: 18px; }
     }
   </style>
 </head>
@@ -303,8 +325,8 @@
   <div class="pattern"></div>
   <header>
     <div>
-      <div class="wordmark">AI·SRF</div>
-      <div class="subtitle">STRATEGIC RESILIENCE FRAMEWORK</div>
+      <div class="wordmark">AI-SRF</div>
+      <div class="subtitle">Executive Decision Operating System</div>
     </div>
     <div class="identity">
       <span id="userName">Not signed in</span>
@@ -316,8 +338,8 @@
 
   <section id="loginScreen" class="login-screen">
     <form id="loginForm" class="login-card">
-      <h1 class="wordmark" style="color: var(--header);">AI·SRF</h1>
-      <p class="subtitle" style="color: var(--header); opacity: .6;">STRATEGIC RESILIENCE FRAMEWORK</p>
+      <h1 class="wordmark" style="color: var(--header);">AI-SRF</h1>
+      <p class="control-note">Sign in to review board-level decisions, approval gates, and supporting evidence.</p>
       <label for="apiBaseLogin">Worker API</label>
       <input id="apiBaseLogin" value="https://ai-srf-governance-worker.bryte-sika.workers.dev">
       <label for="email">Email</label>
@@ -338,490 +360,36 @@
     </form>
   </section>
 
-  <section id="appShell" class="hidden">
-    <nav class="stepper" id="stepper"></nav>
+  <section id="appShell" class="shell hidden">
+    <aside>
+      <label for="goal">Decision Case</label>
+      <textarea id="goal">The board of a South African financial services company must decide whether to migrate customer analytics workloads to a cloud AI platform while facing load-shedding risk, POPIA compliance obligations, vendor lock-in concerns, and pressure to improve decision speed before the next reporting cycle.</textarea>
+      <label for="stage">Entry Point</label>
+      <select id="stage"></select>
+      <p class="control-note">Executives approve or reject recommendations. Analysts and admins may run decision preparation.</p>
+      <button class="primary" id="runGovernedCycle" type="button">Run Decision Preparation</button>
+      <div class="commands">
+        <button class="command secondary" id="runSimulation" type="button">Simulate</button>
+        <button class="command secondary" id="stressTest" type="button">Stress Test</button>
+        <button class="command secondary" id="challengeAssumptions" type="button">Challenge</button>
+        <button class="command secondary" id="reopenCase" type="button">Re-open</button>
+      </div>
+    </aside>
 
-    <main>
-      <section class="metrics">
-        <div class="metric primary">
-          <h2>Risk State</h2>
-          <div class="value" id="riskState">ELEVATED</div>
-          <small id="riskNote">Board-level risk posture</small>
-        </div>
-        <div class="metric">
-          <h2>Consensus Level</h2>
-          <div class="value" id="consensusLevel">Unknown</div>
-          <small id="consensusNote">Awaiting governed cycle</small>
-        </div>
-        <div class="metric">
-          <h2>Strongest Objection</h2>
-          <div class="value" id="strongestObjection">None</div>
-          <small>Challenge function active</small>
-        </div>
-        <div class="metric">
-          <h2>Implementation Readiness</h2>
-          <div class="value" id="readiness">Not Ready</div>
-          <small id="readinessNote">Verification chain incomplete</small>
-        </div>
-      </section>
-
-      <section class="workspace">
-        <aside>
-          <label for="apiBase">Worker API</label>
-          <input id="apiBase" value="https://ai-srf-governance-worker.bryte-sika.workers.dev">
-          <label for="goal">Decision Case</label>
-          <textarea id="goal">The board of a South African financial services company must decide whether to migrate customer analytics workloads to a cloud AI platform while facing load-shedding risk, POPIA compliance obligations, vendor lock-in concerns, and pressure to improve decision speed before the next reporting cycle.</textarea>
-          <label for="stage">Entry Stage</label>
-          <select id="stage"></select>
-        </aside>
-
-        <div class="panel-grid">
-          <section class="panel wide board-brief">
-            <h2>Board Brief</h2>
-            <div class="brief-verdict" id="boardBrief">No verdict yet. Run a governed decision cycle.</div>
-            <button class="run-primary" id="runGovernedCycle" type="button">Run Governed Decision Cycle</button>
-          </section>
-          <section class="panel">
-            <h2>Devil's Advocate</h2>
-            <pre id="devil">Challenge function active</pre>
-          </section>
-          <section class="panel">
-            <h2>Evidence</h2>
-            <pre id="evidence">No evidence recorded.</pre>
-          </section>
-          <section class="panel wide">
-            <h2>STRATEGIC ANALYSIS</h2>
-            <pre id="strategicAnalysis">No strategic analysis yet.</pre>
-          </section>
-          <section class="panel wide">
-            <h2>FRAMEWORK SELECTION</h2>
-            <pre id="frameworkSelection">No framework selection yet.</pre>
-          </section>
-          <section class="panel wide">
-            <h2>BLENDED STRATEGY</h2>
-            <pre id="blendedStrategy">No blended strategy yet.</pre>
-          </section>
-          <section class="panel wide">
-            <h2>EXECUTIVE NARRATIVE</h2>
-            <pre id="executiveNarrative">No executive narrative yet.</pre>
-          </section>
-          <section class="panel">
-            <h2>Assumptions</h2>
-            <pre id="assumptions">No assumptions recorded.</pre>
-          </section>
-          <section class="panel">
-            <h2>Options</h2>
-            <pre id="options">No options generated.</pre>
-          </section>
-          <section class="panel">
-            <h2>Monitoring</h2>
-            <pre id="monitoring">No monitoring rules.</pre>
-          </section>
-          <section class="panel wide">
-            <h2>DIGITAL TWIN STATUS</h2>
-            <pre id="digitalTwin">No digital twin state loaded.</pre>
-          </section>
-          <section class="panel wide">
-            <h2>SIMULATION RESULTS</h2>
-            <pre id="simulationResults">No simulation results yet.</pre>
-          </section>
-          <section class="panel wide">
-            <h2>Learning & Memory</h2>
-            <pre id="memory">No memory retrieved.</pre>
-          </section>
-          <section class="panel wide">
-            <h2>ORGANIZATIONAL INTELLIGENCE</h2>
-            <pre id="orgIntelligence">No organizational intelligence yet.</pre>
-          </section>
-          <section class="panel wide">
-            <h2>Implementation Roadmap</h2>
-            <pre id="roadmap">No roadmap generated.</pre>
-          </section>
-          <section class="panel wide">
-            <h2>Audit Trace</h2>
-            <pre class="trace" id="audit">No audit events loaded.</pre>
-          </section>
-        </div>
-      </section>
-
-      <section class="commands">
-        <div class="caption">This framework does not help. It governs.</div>
-        <div class="command-row">
-          <button class="command primary-command" id="runFull" type="button">Run full decision cycle</button>
-          <button class="command primary-command" id="runSimulation" type="button">Run Simulation Before Decision</button>
-          <button class="command danger" id="stressTest" type="button">Stress test current decision</button>
-          <button class="command danger" id="challengeAssumptions" type="button">Challenge assumptions</button>
-          <button class="command" id="reopenCase" type="button">Re-open case</button>
-        </div>
-      </section>
+    <main class="main">
+      <section id="executiveVerdict" class="verdict" aria-live="polite"></section>
+      <section id="strategicNarrative" class="section"></section>
+      <section id="decisionOptions" class="section"></section>
+      <section id="riskSimulation" class="section"></section>
+      <section id="governanceControls" class="section"></section>
+      <details id="technicalDrawer" class="drawer">
+        <summary>Technical Details</summary>
+        <div id="technicalDetails" class="technical-grid"></div>
+      </details>
     </main>
   </section>
-  <div class="devil-tag">Challenge function active</div>
   <div class="pattern"></div>
 
-  <script>
-    const stages = [
-      ["tracker", "Environmental Monitor"],
-      ["induna", "Socratic Partner"],
-      ["auditor", "Forensic Analyst"],
-      ["innovator", "Creative Catalyst"],
-      ["challenger", "Devil's Advocate"],
-      ["architect", "Implementation Scaffolding"],
-      ["guardian", "Monitoring Agent"]
-    ];
-    let activeUser = null;
-    let activeCase = null;
-    let lastState = null;
-    const API_BASE = "https://ai-srf-governance-worker.bryte-sika.workers.dev";
-
-    const apiInput = document.getElementById("apiBase");
-    const apiLogin = document.getElementById("apiBaseLogin");
-    apiInput.value = API_BASE;
-    apiLogin.value = API_BASE;
-
-    function apiBase() {
-      return API_BASE;
-    }
-
-    function canRun() {
-      return activeUser?.role === "analyst" || activeUser?.role === "admin";
-    }
-
-    function applyRoleGates() {
-      const allowed = canRun();
-      const runButton = document.getElementById("runGovernedCycle");
-      runButton.disabled = !allowed;
-      runButton.title = allowed ? "Run governed decision cycle" : "Executive role is view-only for execution.";
-      document.getElementById("runFull").disabled = !allowed;
-      document.getElementById("stressTest").disabled = !allowed;
-      document.getElementById("challengeAssumptions").disabled = !allowed;
-      document.getElementById("runSimulation").disabled = !allowed;
-      document.getElementById("reopenCase").disabled = !allowed;
-    }
-
-    function renderStepper(currentStage = 1, hasRisk = false) {
-      const stepper = document.getElementById("stepper");
-      stepper.innerHTML = "";
-      stages.forEach(([id, label], index) => {
-        const stageNo = index + 1;
-        const item = document.createElement("div");
-        item.className = `step ${stageNo === Number(currentStage) ? "active" : ""} ${stageNo < Number(currentStage) ? "done" : ""} ${hasRisk && id === "challenger" ? "risk" : ""}`;
-        item.innerHTML = `<strong>${stageNo}. ${id}</strong><span>${label}</span>`;
-        stepper.appendChild(item);
-      });
-    }
-
-    stages.forEach(([id, label], index) => {
-      const option = document.createElement("option");
-      option.value = String(index + 1);
-      option.textContent = `${index + 1}. ${label}`;
-      document.getElementById("stage").appendChild(option);
-    });
-    renderStepper(1);
-
-    function pretty(value, emptyText) {
-      if (value === undefined || value === null) return emptyText;
-      if (Array.isArray(value) && value.length === 0) return emptyText;
-      if (typeof value === "object" && Object.keys(value).length === 0) return emptyText;
-      return typeof value === "string" ? value : JSON.stringify(value, null, 2);
-    }
-
-    async function fetchJson(path, options = {}) {
-      const url = `${apiBase()}${path}`;
-      const response = await fetch(url, {
-        ...options,
-        credentials: "include",
-        headers: { "Content-Type": "application/json", ...(options.headers || {}) }
-      });
-      const text = await response.text();
-      let payload = {};
-      try {
-        payload = text ? JSON.parse(text) : {};
-      } catch {
-        throw new Error(`HTTP ${response.status}: API returned non-JSON.`);
-      }
-      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
-      return payload;
-    }
-
-    async function loadMe() {
-      try {
-        const result = await fetchJson("/api/auth/me", { method: "GET" });
-        activeUser = result.user;
-        document.getElementById("userName").textContent = `${activeUser.email} (${activeUser.role})`;
-        document.getElementById("orgName").textContent = activeUser.organization_name || activeUser.organization_id;
-        document.getElementById("loginScreen").classList.add("hidden");
-        document.getElementById("appShell").classList.remove("hidden");
-        applyRoleGates();
-        await loadDigitalTwin();
-      } catch {
-        document.getElementById("loginScreen").classList.remove("hidden");
-        document.getElementById("appShell").classList.add("hidden");
-      }
-    }
-
-    document.getElementById("loginForm").addEventListener("submit", async (event) => {
-      event.preventDefault();
-      apiInput.value = apiLogin.value;
-      const body = {
-        email: document.getElementById("email").value,
-        role: document.getElementById("role").value,
-        organization_id: document.getElementById("organizationId").value,
-        organization_name: document.getElementById("organizationName").value,
-        passcode: document.getElementById("passcode").value
-      };
-      await fetchJson("/api/auth/login", { method: "POST", body: JSON.stringify(body) });
-      await loadMe();
-    });
-
-    document.getElementById("logoutButton").addEventListener("click", async () => {
-      await fetchJson("/api/auth/logout", { method: "POST", body: "{}" }).catch(() => null);
-      activeUser = null;
-      activeCase = null;
-      lastState = null;
-      document.getElementById("loginScreen").classList.remove("hidden");
-      document.getElementById("appShell").classList.add("hidden");
-    });
-
-    async function runCycle(command) {
-      const suffix = command === "stress" ? "\n\nStress test the current decision with Devil's Advocate scrutiny." :
-        command === "challenge" ? "\n\nChallenge the assumptions and force forensic re-evaluation." : "";
-      const body = {
-        case_id: activeCase || crypto.randomUUID(),
-        stage: Number(document.getElementById("stage").value),
-        user_goal: document.getElementById("goal").value + suffix,
-        risk_state: "ELEVATED",
-        sector: "financial_services",
-        max_iterations: command === "full" ? 14 : 6
-      };
-      activeCase = body.case_id;
-      const result = await fetchJson("/api/loop", { method: "POST", body: JSON.stringify(body) });
-      lastState = result.case_state || {};
-      renderState(lastState);
-      await loadEvents(activeCase);
-    }
-
-    function commandPayload(extra = {}) {
-      const caseId = activeCase || crypto.randomUUID();
-      activeCase = caseId;
-      return {
-        case_id: caseId,
-        entry_stage: Number(document.getElementById("stage").value),
-        user_goal: document.getElementById("goal").value,
-        risk_state: "ELEVATED",
-        sector: "financial_services",
-        ...extra
-      };
-    }
-
-    async function executeCommand(endpoint, buttonId, label, extra = {}) {
-      const button = document.getElementById(buttonId);
-      if (!canRun()) return;
-      button.disabled = true;
-      button.innerHTML = `<span class="spinner"></span>${label}`;
-      try {
-        const result = await fetchJson(endpoint, {
-          method: "POST",
-          body: JSON.stringify(commandPayload(extra))
-        });
-        lastState = result.case_state || lastState || {};
-        renderState(lastState);
-        await loadEvents(activeCase);
-      } catch (error) {
-        if (String(error.message).includes("401")) {
-          activeUser = null;
-          document.getElementById("loginScreen").classList.remove("hidden");
-          document.getElementById("appShell").classList.add("hidden");
-          return;
-        }
-        document.getElementById("audit").textContent = "Execution failed - see audit trace";
-      } finally {
-        button.textContent = label;
-        applyRoleGates();
-      }
-    }
-
-    async function runGovernedDecisionCycle() {
-      const button = document.getElementById("runGovernedCycle");
-      if (!canRun()) return;
-      button.disabled = true;
-      button.innerHTML = '<span class="spinner"></span>Running governed cycle';
-      const caseId = activeCase || crypto.randomUUID();
-      activeCase = caseId;
-      const payload = {
-        case_id: caseId,
-        entry_stage: Number(document.getElementById("stage").value)
-      };
-      console.log("Running decision loop", payload);
-      try {
-        const result = await fetchJson("/api/decision/run", {
-          method: "POST",
-          body: JSON.stringify(payload)
-        });
-        lastState = result.case_state || {};
-        renderState(lastState);
-        await loadEvents(activeCase);
-      } catch (error) {
-        if (String(error.message).includes("401")) {
-          activeUser = null;
-          document.getElementById("loginScreen").classList.remove("hidden");
-          document.getElementById("appShell").classList.add("hidden");
-          return;
-        }
-        document.getElementById("audit").textContent = "Execution failed - see audit trace";
-      } finally {
-        button.innerHTML = "Run Governed Decision Cycle";
-        applyRoleGates();
-      }
-    }
-
-    function renderState(state) {
-      const objection = (state.objections || [])[0];
-      const verification = state.verification_chain || {};
-      const ready = verification.devil_advocate_validated && verification.policy_sentinel_validated && verification.consensus_tracker_confirmed;
-      document.getElementById("riskState").textContent = state.loop?.risk_state || "ELEVATED";
-      document.getElementById("riskNote").textContent = state.status || "active case";
-      document.getElementById("consensusLevel").textContent = state.consensus?.level || "Unknown";
-      document.getElementById("consensusNote").textContent = state.consensus?.final_rationale || "No final rationale.";
-      document.getElementById("strongestObjection").textContent = objection?.severity ? objection.severity.toUpperCase() : (objection ? "OPEN" : "None");
-      document.getElementById("readiness").textContent = ready ? "Ready" : "Not Ready";
-      document.getElementById("readinessNote").textContent = pretty(verification, "Verification chain incomplete");
-      document.getElementById("boardBrief").textContent = (state.decision?.rationale || state.consensus?.final_rationale || "No verdict yet. Run a governed decision cycle.").slice(0, 260);
-      document.getElementById("devil").textContent = pretty(objection || state.devil_advocate_findings, "Challenge function active");
-      document.getElementById("evidence").textContent = pretty(state.evidence_bundle, "No evidence recorded.");
-      document.getElementById("strategicAnalysis").textContent = pretty({
-        porters_summary: state.frameworks?.porter || state.analysis?.industry || null,
-        swot_summary: state.frameworks?.swot || state.analysis?.internal || null,
-        pestle_highlights: state.frameworks?.pestle?.highlights || state.analysis?.environment?.highlights || [],
-        value_chain_bottlenecks: state.frameworks?.value_chain?.bottlenecks || [],
-        scenario_posture: state.frameworks?.scenario_planning?.preferred_posture || null
-      }, "No strategic analysis yet.");
-      document.getElementById("frameworkSelection").textContent = pretty(state.framework_selection ? {
-        primary_framework: state.framework_selection.primary_framework,
-        supporting_frameworks: state.framework_selection.secondary_frameworks || [],
-        reason: state.framework_selection.justification,
-        classification: state.framework_selection.classification,
-        ranked_frameworks: state.framework_selection.ranked_frameworks || []
-      } : null, "No framework selection yet.");
-      document.getElementById("blendedStrategy").textContent = pretty(state.blended_analysis?.recommended_strategy ? {
-        final_recommendation: state.blended_analysis.recommended_strategy,
-        confidence: state.blended_analysis.confidence,
-        top_risks: (state.blended_analysis.top_risks || []).slice(0, 5),
-        top_opportunities: (state.blended_analysis.top_opportunities || []).slice(0, 5),
-        key_tradeoffs: state.blended_analysis.key_tradeoffs || [],
-        conflicts: state.blended_analysis.conflicts || [],
-        contributors: state.blended_analysis.framework_contributors || []
-      } : null, "No blended strategy yet.");
-      document.getElementById("executiveNarrative").textContent = pretty(state.narrative ? {
-        executive_summary: state.narrative.executive_summary,
-        strategic_narrative: state.narrative.strategic_narrative,
-        key_insights: state.narrative.key_insights || [],
-        recommended_action: state.narrative.recommended_action,
-        confidence: state.narrative.confidence
-      } : null, "No executive narrative yet.");
-      document.getElementById("assumptions").textContent = pretty(state.assumptions, "No assumptions recorded.");
-      document.getElementById("options").textContent = pretty(state.options || state.options_generated, "No options generated.");
-      document.getElementById("monitoring").textContent = pretty({ risk_signals: state.risk_signals, monitoring_rules: state.monitoring_rules, alert_thresholds: state.alert_thresholds }, "No monitoring rules.");
-      renderTwin(state.digital_twin);
-      document.getElementById("simulationResults").textContent = pretty(state.simulation ? {
-        best_strategy: state.simulation.best_strategy,
-        highest_risk_score: state.simulation.highest_risk_score,
-        risk_threshold: state.simulation.risk_threshold,
-        block_execution: state.simulation.block_execution,
-        scenarios_tested: (state.simulation.simulation_summary || []).map((item) => ({
-          scenario: item.scenario,
-          strategy: item.strategy,
-          risk_score: item.outcome?.risk_score,
-          success_probability: item.outcome?.success_probability,
-          resilience: item.outcome?.resilience,
-          recommendation: item.outcome?.recommendation
-        })),
-        failure_patterns: (state.simulation.simulation_summary || [])
-          .flatMap((item) => item.outcome?.key_failures || [])
-          .slice(0, 8)
-      } : null, "No simulation results yet.");
-      document.getElementById("memory").textContent = pretty({
-        similar_past_cases: state.shared_memory?.episodic || state.memory?.episodic || [],
-        relevant_facts: state.shared_memory?.semantic || state.memory?.semantic || [],
-        learned_strategies: (state.shared_memory?.procedural || state.memory?.procedural || []).map((item) => ({
-          task_type: item.task_type,
-          content: item.content,
-          strategy_steps: item.strategy_steps,
-          success_rate: item.success_rate,
-          failure_count: item.failure_count,
-          last_used: item.last_used,
-          relevance: item.relevance
-        })),
-        reflection: state.reflection || {}
-      }, "No memory retrieved.");
-      document.getElementById("orgIntelligence").textContent = pretty({
-        recommended_strategy: state.organizational_intelligence?.recommended_strategy,
-        confidence: state.organizational_intelligence?.confidence,
-        based_on: state.organizational_intelligence?.based_on || [],
-        similar_past_cases: (state.shared_memory?.episodic || state.memory?.episodic || []).slice(0, 3),
-        learned_strategies: (state.shared_memory?.procedural || state.memory?.procedural || []).map((item) => ({
-          task_type: item.task_type || item.content?.task_type,
-          success_rate: item.success_rate,
-          failure_count: item.failure_count,
-          relevance: item.relevance
-        })),
-        failure_patterns: (state.shared_memory?.episodic || state.memory?.episodic || [])
-          .filter((item) => item.outcome === "failure" || item.content?.outcome === "failure")
-          .slice(0, 5)
-      }, "No organizational intelligence yet.");
-      document.getElementById("roadmap").textContent = pretty(state.implementation_plan, "No roadmap generated.");
-      renderStepper(state.current_stage || 1, Boolean(objection));
-    }
-
-    function renderTwin(twin) {
-      document.getElementById("digitalTwin").textContent = pretty(twin ? {
-        current_risk_level: twin.risk_state?.level || "unknown",
-        risk_score: twin.risk_state?.score,
-        environment_signals: twin.environment_state || {},
-        operational_metrics: twin.operational_state?.system_metrics || twin.operational_state || {},
-        last_update_time: twin.last_updated || twin.timestamp
-      } : null, "No digital twin state loaded.");
-    }
-
-    async function loadDigitalTwin() {
-      try {
-        const result = await fetchJson("/api/digital-twin", { method: "GET" });
-        renderTwin(result.digital_twin);
-      } catch {
-        renderTwin(null);
-      }
-    }
-
-    async function loadEvents(caseId) {
-      const result = await fetchJson(`/api/cases/${encodeURIComponent(caseId)}/events`, { method: "GET" });
-      document.getElementById("audit").textContent = (result.events || []).map((event) => {
-        return `${event.timestamp || ""}  ${event.action || event.event_type}  ${event.agent_id || ""}  ${event.user_id || ""}\n${event.output_summary || event.input_summary || ""}`;
-      }).join("\n\n") || "No audit events loaded.";
-    }
-
-    async function decideApproval(approved) {
-      const gate = [...(lastState?.approval_gates || [])].reverse().find((item) => item.status === "pending");
-      if (!activeCase || !gate) {
-        document.getElementById("audit").textContent = "No pending approval gate is available for this case.";
-        return;
-      }
-      const result = await fetchJson(`/api/cases/${encodeURIComponent(activeCase)}/approvals/${encodeURIComponent(gate.approval_id)}`, {
-        method: "POST",
-        body: JSON.stringify({ approved, notes: approved ? "Approved from executive workspace." : "Rejected from executive workspace." })
-      });
-      lastState = result.case_state || lastState;
-      renderState(lastState);
-      await loadEvents(activeCase);
-    }
-
-    document.getElementById("runFull").addEventListener("click", () => executeCommand("/api/decision/run", "runFull", "Run full decision cycle", { max_iterations: 10 }));
-    document.getElementById("runSimulation").addEventListener("click", () => executeCommand("/api/decision/simulate", "runSimulation", "Run Simulation Before Decision", { max_iterations: 12, simulation_mode_enabled: true }));
-    document.getElementById("runGovernedCycle").addEventListener("click", () => runGovernedDecisionCycle());
-    document.getElementById("stressTest").addEventListener("click", () => executeCommand("/api/decision/stress-test", "stressTest", "Stress test current decision", { max_iterations: 8 }));
-    document.getElementById("challengeAssumptions").addEventListener("click", () => executeCommand("/api/decision/challenge-assumptions", "challengeAssumptions", "Challenge assumptions", { max_iterations: 8 }));
-    document.getElementById("reopenCase").addEventListener("click", () => executeCommand("/api/decision/reopen", "reopenCase", "Re-open case"));
-
-    loadMe();
-  </script>
+  <script type="module" src="./components/executive-components.js"></script>
 </body>
 </html>
