@@ -45,6 +45,12 @@ export function validateAgentRegistry(registryDocument) {
     if (agent.id !== agentId) {
       throw new Error(`Agent key ${agentId} does not match id ${agent.id}`);
     }
+    if (!Array.isArray(agent.allowed_tools) || agent.allowed_tools.length === 0) {
+      throw new Error(`Agent ${agentId} must declare at least one governed tool.`);
+    }
+    if (agent.allowed_tools.length > 5) {
+      throw new Error(`Agent ${agentId} has tool explosion: max 5 tools allowed, found ${agent.allowed_tools.length}.`);
+    }
   }
   return registryDocument;
 }

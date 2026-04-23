@@ -1,8 +1,10 @@
 import { simulateDigitalTwinScenario } from "../digital-twin/digital-twin-engine.js";
 import {
   TOOL_OUTPUT_SCHEMAS,
+  TOOL_ERROR_SCHEMA,
   enforceJSON as enforceStructuredJSON,
   safeToolExecution,
+  structuredToolError,
   validateBaseToolOutput
 } from "../../utils/schema-validator.js";
 
@@ -10,6 +12,7 @@ const DEFAULT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const TOOL_CACHE_VERSION = "tool-v3-shared-memory";
 const TOOL_TIMEOUT_MS = 8000;
 const CACHE_TTL_SECONDS = 300;
+const MAX_CACHE_ENTRIES_PER_CASE = 12;
 
 function compactTrace(value, maxChars = 1600) {
   try {
@@ -96,6 +99,11 @@ function caseForPrompt(state) {
   const context = contextFrom(state);
   return {
     text: textFrom(state),
+    case_facts: context.case_facts || {
+      case_id: context.case_id || null,
+      organization_id: context.organization_id || null,
+      decision_type: context.decision_type || "strategic_decision"
+    },
     context,
     frameworks: context.frameworks || {},
     analysis: context.analysis || {},
@@ -862,7 +870,13 @@ ${JSON.stringify(caseForPrompt(input))}
     traceStep("gather_evidence.end", { case_id: caseId }, { output });
     return output;
   } catch (err) {
+    if (isCriticalInfrastructureError(err)) throw err;
     console.error("gather_evidence FAILED", err);
+    const errorEnvelope = structuredToolError({
+      message: err.message,
+      customerMessage: "Evidence gathering degraded to deterministic evidence.",
+      suggestion: "Continue with fallback evidence, then review the audit trace before approval."
+    });
     const fallbackOutput = withToolName("gather_evidence", validateEvidenceArray({
       ...fallback,
       evidence: ensureEvidenceArray(fallback.evidence, fallback).concat({
@@ -873,7 +887,7 @@ ${JSON.stringify(caseForPrompt(input))}
         message: err.message
       }),
       error: true,
-      message: err.message,
+      ...errorEnvelope,
       confidence: Number(fallback.confidence || 0.5)
     }));
     traceStep("gather_evidence.fallback", { case_id: caseId, key }, { error: err.message, output: fallbackOutput });
@@ -1280,18 +1294,60 @@ export const toolSchemas = Object.fromEntries(
     name,
     {
       name,
-      description: `Hybrid AI-SRF structured tool: ${name}`,
+      description: toolPurpose(name),
+      purpose: toolPurpose(name),
       input_schema: {
         type: "object",
+        additionalProperties: true,
         properties: {
           text: { type: "string" },
-          context: { type: "object" }
+          context: {
+            type: "object",
+            properties: {
+              case_facts: {
+                type: "object",
+                properties: {
+                  case_id: { type: "string" },
+                  organization_id: { type: ["string", "null"] },
+                  decision_type: { type: "string" }
+                }
+              }
+            }
+          }
         }
       },
-      output_schema: TOOL_OUTPUT_SCHEMAS[name] || { required: {} }
+      output_schema: TOOL_OUTPUT_SCHEMAS[name] || { required: {} },
+      error_schema: TOOL_ERROR_SCHEMA
     }
   ])
 );
+
+function toolPurpose(name) {
+  switch (name) {
+    case "gather_evidence": return "Collect governed evidence, signals, and governance basis for the case.";
+    case "run_porters_five_forces": return "Analyze industry forces and supplier/customer/substitution pressures.";
+    case "run_swot_analysis": return "Analyze strengths, weaknesses, opportunities, and threats.";
+    case "run_pestle_analysis": return "Analyze political, economic, social, technology, legal, and environmental constraints.";
+    case "run_value_chain_analysis": return "Analyze operational value-chain activities, support activities, and bottlenecks.";
+    case "run_scenario_planning": return "Build strategic scenarios and identify critical uncertainties.";
+    case "extract_assumptions": return "Extract assumptions and diagnostic questions from the case context.";
+    case "root_cause_analysis": return "Perform forensic root-cause analysis over evidence and constraints.";
+    case "generate_options": return "Generate structured strategic options from evidence, memory, and frameworks.";
+    case "run_stress_tests": return "Stress test a decision path against adverse scenarios.";
+    case "generate_objections": return "Generate adversarial objections and failure modes.";
+    case "build_implementation_plan": return "Build a phased implementation plan for the selected option.";
+    case "generate_monitoring_rules": return "Generate post-decision monitoring rules, risk signals, and alert thresholds.";
+    case "validate_policy": return "Validate final governance and policy constraints.";
+    case "validate_consensus": return "Validate consensus readiness and unresolved tensions.";
+    case "extract_memory": return "Extract episodic, semantic, and procedural memory from the completed case.";
+    case "reflect_on_decision": return "Reflect on what worked, failed, and should improve.";
+    case "extract_learning": return "Extract cross-agent learning and strategy updates.";
+    case "manage_memory": return "Coordinate memory extraction, reflection, and learning as one governed tool.";
+    case "generate_scenarios": return "Generate isolated simulation scenarios before execution.";
+    case "evaluate_outcome": return "Score simulated outcome risk, resilience, and recommendation.";
+    default: return `Execute governed structured reasoning for ${name}.`;
+  }
+}
 
 function cacheEntryKey(toolName, input = {}) {
   const caseId = input.context?.case_id || "no-case";
@@ -1353,11 +1409,11 @@ async function readCaseCacheEntry(cache, caseId, entryKey) {
     return doc.entries?.[entryKey]?.result || null;
   } catch (error) {
     traceStep("tool.kv_get.error", { case_id: caseId, key }, { error: error.message });
-    return null;
+    throw error;
   }
 }
 
-async function writeCaseCacheEntry(cache, caseId, entryKey, result) {
+async function writeCaseCacheEntry(cache, caseId, entryKey, result, resourceGuard = null) {
   const key = caseScopedKey(caseId);
   try {
     const doc = await parseCacheDocument(cache.get ? await cache.get(key, "json") : null);
@@ -1366,11 +1422,19 @@ async function writeCaseCacheEntry(cache, caseId, entryKey, result) {
       result,
       updated_at: new Date().toISOString()
     };
-    await cache.put(key, JSON.stringify({
+    const boundedEntries = Object.fromEntries(
+      Object.entries(entries)
+        .sort(([, left], [, right]) => String(right.updated_at || "").localeCompare(String(left.updated_at || "")))
+        .slice(0, MAX_CACHE_ENTRIES_PER_CASE)
+    );
+    const payload = JSON.stringify({
       version: TOOL_CACHE_VERSION,
       case_id: String(caseId || "no-case"),
-      entries
-    }), { expirationTtl: CACHE_TTL_SECONDS });
+      cache_role: "cache_only",
+      entries: boundedEntries
+    });
+    resourceGuard?.assertCacheValue?.(key, payload);
+    await cache.put(key, payload, { expirationTtl: CACHE_TTL_SECONDS });
     return true;
   } catch (error) {
     traceStep("tool.kv_put.error", { case_id: caseId, key }, { error: error.message });
@@ -1388,13 +1452,26 @@ function shortHash(value = "") {
   return (hash >>> 0).toString(36);
 }
 
+function isCriticalInfrastructureError(error = {}) {
+  const message = String(error.message || error || "").toLowerCase();
+  return (
+    message.includes("kv ") ||
+    message.includes("key length") ||
+    message.includes("d1") ||
+    message.includes("no such table") ||
+    message.includes("infrastructure")
+  );
+}
+
 export async function runTool(name, input = {}) {
   if (!tools[name]) throw new Error("Tool not found");
   const cache = input.cache;
+  const resourceGuard = input.resource_guard;
   const caseId = input.context?.case_id || input.case_id || `no-case-${shortHash(textFrom(input))}`;
   const key = cache ? cacheKey(name, input) : null;
   const entryKey = cache ? cacheEntryKey(name, input) : null;
   if (cache && key) {
+    resourceGuard?.beforeSubrequest?.("kv_get", { tool_name: name, key });
     traceStep("tool.kv_get", { tool_name: name, key }, { key_bytes: new TextEncoder().encode(key).length });
     const cached = await readCaseCacheEntry(cache, caseId, entryKey);
     if (cached) {
@@ -1412,8 +1489,9 @@ export async function runTool(name, input = {}) {
     { toolName: name, schema: toolSchemas[name]?.output_schema, fallback: deterministicFallback(name, input) }
   );
   if (cache && key) {
+    resourceGuard?.beforeSubrequest?.("kv_put", { tool_name: name, key });
     traceStep("tool.kv_put", { tool_name: name, key }, { value_type: "json", key_bytes: new TextEncoder().encode(key).length });
-    await writeCaseCacheEntry(cache, caseId, entryKey, result);
+    await writeCaseCacheEntry(cache, caseId, entryKey, result, resourceGuard);
   }
   return result;
 }
@@ -1446,7 +1524,14 @@ export async function invokeSkill(toolName, input = {}) {
   try {
     return await runTool(toolName, input);
   } catch (error) {
-    return { status: "error", message: error.message };
+    return {
+      status: "error",
+      ...structuredToolError({
+        message: error.message,
+        customerMessage: `The ${toolName} tool could not complete.`,
+        suggestion: "Retry if retriable, otherwise escalate to the coordinator."
+      })
+    };
   }
 }
 
@@ -1535,13 +1620,30 @@ export async function afterToolCall({ agentId, toolName, result = {}, policy, po
 export async function executeToolWithHooks({ agentId, toolName, input = {}, policy, eventBus, caseId }) {
   const policyCheck = await beforeToolCall({ agentId, toolName, input, policy, eventBus, caseId });
   if (!policyCheck.allowed) {
-    return { status: "blocked", policy_check: policyCheck };
+    return {
+      status: "blocked",
+      ...structuredToolError({
+        errorCategory: "policy_blocked",
+        isRetriable: false,
+        message: policyCheck.reason || `Tool ${toolName} blocked by policy.`,
+        customerMessage: `The ${toolName} tool was blocked by governance policy.`,
+        suggestion: "Stop this path and escalate to policy review before retrying."
+      }),
+      policy_check: policyCheck
+    };
   }
 
   try {
     const result = await runTool(toolName, input);
     return afterToolCall({ agentId, toolName, result, policy, policyCheck, eventBus, caseId });
   } catch (error) {
+    const errorEnvelope = structuredToolError({
+      errorCategory: error.message?.toLowerCase().includes("timeout") ? "timeout" : "tool_execution_failed",
+      isRetriable: true,
+      message: error.message,
+      customerMessage: `The ${toolName} tool failed during execution.`,
+      suggestion: "The coordinator should retry within limits or fail fast if the error is critical."
+    });
     await eventBus?.emit("system_error", {
       case_id: caseId,
       agent_id: agentId,
@@ -1549,8 +1651,8 @@ export async function executeToolWithHooks({ agentId, toolName, input = {}, poli
       output_summary: error.message,
       tools_used: [toolName],
       policy_checks: [policyCheck],
-      raw_payload: { tool: toolName, error: error.message }
+      raw_payload: { tool: toolName, ...errorEnvelope }
     });
-    return { status: "error", message: error.message, policy_check: policyCheck };
+    return { status: "error", ...errorEnvelope, policy_check: policyCheck };
   }
 }

@@ -30,6 +30,8 @@ export const EVENT_TYPES = new Set([
   "queue_enqueued",
   "queue_dequeued",
   "loop_stopped",
+  "resource_telemetry",
+  "human_escalation_required",
   "system_error"
 ]);
 

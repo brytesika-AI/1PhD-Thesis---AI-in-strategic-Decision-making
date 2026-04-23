@@ -3,9 +3,10 @@ import { ConsensusTracker } from "../core/consensus-tracker.js";
 import { EventBus } from "../events/event-bus.js";
 import { blendFrameworks } from "../frameworks/framework-blender.js";
 import { selectFrameworks } from "../frameworks/framework-selector.js";
-import { buildOrganizationalIntelligence } from "../memory/d1-memory-store.js";
+import { buildOrganizationalIntelligence, deriveCaseType } from "../memory/d1-memory-store.js";
 import { generateStrategicNarrative } from "../narrative/narrative-engine.js";
 import { PolicyEngine } from "../policy/policy-engine.js";
+import { createResourceGuard, isResourceLimitError } from "../runtime/resource-guard.js";
 import { PIPELINE_ORDER, getAgent, getAgentForStage } from "../shared/agent-registry.js";
 import { executeToolWithHooks, validateToolOutput } from "../skills/index.js";
 import { emptyCaseState } from "../state/d1-case-store.js";
@@ -13,6 +14,19 @@ import { DecisionQueues } from "./queues.js";
 
 const REQUIRED_STAGE_EVENTS = new Set(["agent_start", "agent_end", "state_updated", "consensus_update"]);
 const CONSENSUS_RANK = { unknown: 0, low: 1, medium: 2, high: 3 };
+const CIRCUIT_FAILURE_THRESHOLD = 2;
+const GLOBAL_FAILURE_THRESHOLD = 3;
+const CIRCUIT_OPEN_MS = 60000;
+const ARRAY_LIMITS = {
+  evidence: 24,
+  signals: 24,
+  assumptions: 24,
+  options: 12,
+  objections: 12,
+  rebuttals: 12,
+  errors: 12,
+  auditRefs: 80
+};
 const REQUIRED_D1_TABLES = [
   "decision_cases",
   "audit_events",
@@ -152,6 +166,41 @@ function mergeObjects(existing = {}, incoming = {}) {
   return { ...(existing || {}), ...(incoming || {}) };
 }
 
+function cloneJSON(value, fallback = {}) {
+  try {
+    return JSON.parse(JSON.stringify(value ?? fallback));
+  } catch {
+    return fallback;
+  }
+}
+
+function trimArray(value, limit) {
+  return Array.isArray(value) ? value.slice(-limit) : [];
+}
+
+function compactAgentOutput(output = {}) {
+  if (!output || typeof output !== "object" || Array.isArray(output)) return output;
+  const compacted = { ...output };
+  if (compacted.tool_results && typeof compacted.tool_results === "object") {
+    compacted.tool_results_summary = Object.keys(compacted.tool_results);
+    delete compacted.tool_results;
+  }
+  return compacted;
+}
+
+function buildCaseFacts(caseState = {}, userGoal = "", user = null) {
+  return {
+    case_id: String(caseState.case_id || ""),
+    organization_id: caseState.organization_id || user?.organization_id || null,
+    decision_type: caseState.decision_type || caseState.case_facts?.decision_type || deriveCaseType(userGoal || caseState.user_goal || "")
+  };
+}
+
+function refreshCaseFacts(caseState = {}, userGoal = "", user = null) {
+  caseState.case_facts = buildCaseFacts(caseState, userGoal, user);
+  return caseState.case_facts;
+}
+
 function stripPolicyMetadata(output = {}) {
   const { policy_check, after_policy_check, tools_used, ...rest } = output || {};
   return rest;
@@ -212,6 +261,7 @@ function normalizeCaseState(caseState, caseId, userGoal) {
     framework_outputs: { ...defaults.framework_outputs, ...(caseState?.framework_outputs || {}) },
     blended_analysis: { ...defaults.blended_analysis, ...(caseState?.blended_analysis || {}) },
     narrative: caseState?.narrative || defaults.narrative,
+    case_facts: { ...defaults.case_facts, ...(caseState?.case_facts || {}) },
     memory: { ...defaults.memory, ...(caseState?.memory || {}) },
     shared_memory: { ...defaults.shared_memory, ...(caseState?.shared_memory || {}) },
     organizational_intelligence: { ...defaults.organizational_intelligence, ...(caseState?.organizational_intelligence || {}) },
@@ -226,7 +276,7 @@ function normalizeCaseState(caseState, caseId, userGoal) {
 }
 
 export class DecisionLoop {
-  constructor({ registryDocument, caseStore, auditLog, ai, cache = null, memoryStore = null, digitalTwin = null, simulation = null, maxIterations = 12 }) {
+  constructor({ registryDocument, caseStore, auditLog, ai, cache = null, memoryStore = null, digitalTwin = null, simulation = null, background = null, resourceLimits = {}, maxIterations = 12 }) {
     this.registryDocument = registryDocument;
     this.caseStore = caseStore;
     this.auditLog = auditLog;
@@ -235,6 +285,9 @@ export class DecisionLoop {
     this.memoryStore = memoryStore;
     this.digitalTwin = digitalTwin;
     this.simulation = simulation;
+    this.background = background;
+    this.resourceLimits = resourceLimits;
+    this.resourceGuard = null;
     this.maxIterations = maxIterations;
     this.policy = new PolicyEngine(registryDocument);
     this.events = new EventBus({ auditLog });
@@ -243,8 +296,11 @@ export class DecisionLoop {
   }
 
   async run({ caseId, userGoal, maxIterations = this.maxIterations, riskState = "ELEVATED", sector = "general", user = null, entryStage = 1, simulationModeEnabled = false }) {
+    this.resourceGuard = createResourceGuard({ traceId: caseId, limits: this.resourceLimits });
     traceStep("decision_loop.start", { case_id: caseId, user_goal: userGoal, entry_stage: entryStage }, { max_iterations: maxIterations, risk_state: riskState, sector });
+    this.resourceGuard.beforeSubrequest("d1", { operation: "validate_system" });
     await this.validateSystem({ caseId });
+    this.resourceGuard.beforeSubrequest("d1", { operation: "case_load" });
     let caseState = await this.caseStore.getCase(caseId);
     traceStep("decision_loop.case_loaded", { case_id: caseId }, { found: Boolean(caseState), stop_reason: caseState?.loop?.stop_reason || null });
     if (caseState?.organization_id && user?.organization_id && caseState.organization_id !== user.organization_id) {
@@ -270,6 +326,9 @@ export class DecisionLoop {
     caseState.last_modified_by = user?.user_id || caseState.last_modified_by || null;
     caseState.organization_id = caseState.organization_id || user?.organization_id || null;
     caseState.organization_name = caseState.organization_name || user?.organization_name || null;
+    refreshCaseFacts(caseState, userGoal, user);
+    this.pruneContext(caseState);
+    this.assertStateWithinBudget(caseState, "case_initialization");
 
     if (caseState.loop?.stop_reason) {
       traceStep("decision_loop.loop_stopped.return_final", caseState, { stop_reason: caseState.loop.stop_reason });
@@ -284,8 +343,8 @@ export class DecisionLoop {
 
     caseState.simulation_mode_enabled = Boolean(simulationModeEnabled || caseState.simulation_mode_enabled);
     caseState.digital_twin = await this.retrieveDigitalTwin({ caseState, caseId, user });
-    caseState.shared_memory = await this.retrieveMemory({ caseState, caseId, userGoal, user });
-    caseState.memory = caseState.shared_memory;
+    caseState.shared_memory = cloneJSON(await this.retrieveMemory({ caseState, caseId, userGoal, user }), {});
+    caseState.memory = cloneJSON(caseState.shared_memory, {});
     caseState.organizational_intelligence = caseState.shared_memory.organizational_intelligence || buildOrganizationalIntelligence(caseState.shared_memory);
     caseState.framework_selection = await this.selectFrameworksForCase({ caseState, caseId, userGoal });
 
@@ -331,6 +390,15 @@ export class DecisionLoop {
       });
 
       caseState = lastResult.case_state;
+      try {
+        this.pruneContext(caseState);
+        this.assertStateWithinBudget(caseState, `agent_${action.agent_id}`);
+      } catch (error) {
+        if (!isResourceLimitError(error)) throw error;
+        await this.handleResourceLimit({ caseState, action, error });
+        stopReason = "resource_limit_escalation";
+        break;
+      }
       if (caseState.status === "critical_failure") {
         stopReason = "critical_tool_failure";
         traceStep("decision_loop.critical_failure_stop", caseState, { stop_reason: stopReason });
@@ -378,6 +446,8 @@ export class DecisionLoop {
       caseState.status = "escalation_required";
     } else if (caseState.loop.stop_reason === "critical_tool_failure") {
       caseState.status = "critical_failure";
+    } else if (caseState.loop.stop_reason === "resource_limit_escalation" || caseState.loop.stop_reason === "circuit_breaker_escalation") {
+      caseState.status = "escalation_required";
     }
 
     await this.events.emit("turn_end", {
@@ -393,9 +463,19 @@ export class DecisionLoop {
       raw_payload: { stop_reason: caseState.loop.stop_reason, iterations: caseState.loop.iterations }
     });
     await this.persistMemory({ caseState, userGoal, user });
-    await this.persistDigitalTwinFeedback({ caseState, user });
+    this.scheduleBackground("digital_twin_feedback", this.persistDigitalTwinFeedback({ caseState: cloneJSON(caseState, {}), user }));
     caseState.organizational_intelligence = buildOrganizationalIntelligence(caseState.shared_memory || caseState.memory || {});
     await this.generateNarrative({ caseState });
+    this.pruneContext(caseState);
+    this.assertStateWithinBudget(caseState, "final_case_state");
+    this.scheduleBackground("resource_telemetry", this.events.emit("resource_telemetry", {
+      case_id: caseId,
+      agent_id: "decision_governor",
+      input_summary: "Resource guard snapshot.",
+      output_summary: `Subrequests ${this.resourceGuard.counters.subrequests}/${this.resourceGuard.limits.maxSubrequests}.`,
+      raw_payload: this.resourceGuard.snapshot({ status: caseState.status, stop_reason: caseState.loop?.stop_reason })
+    }));
+    this.resourceGuard.beforeSubrequest("d1", { operation: "case_save_final" });
     await this.caseStore.saveCase(caseState);
     return {
       case_id: caseId,
@@ -416,6 +496,97 @@ export class DecisionLoop {
       raw_payload: { queue: queueName, action: queued }
     });
     return queued;
+  }
+
+  scheduleBackground(label, promise) {
+    const guarded = Promise.resolve(promise).catch((error) => {
+      console.error("STEP:", "background_task.error", {
+        state: { task: label },
+        result: { error: error.message }
+      });
+    });
+    if (this.background?.waitUntil) {
+      this.background.waitUntil(guarded);
+      return true;
+    }
+    void guarded;
+    return false;
+  }
+
+  assertStateWithinBudget(caseState, label) {
+    if (!this.resourceGuard) return null;
+    const bytes = this.resourceGuard.assertStateSize(label, caseState);
+    caseState.runtime_resources = this.resourceGuard.snapshot({ state_bytes: bytes });
+    traceStep("resource_guard.state_size", { case_id: caseState.case_id }, caseState.runtime_resources);
+    return bytes;
+  }
+
+  pruneContext(caseState = {}) {
+    caseState.assumptions = trimArray(caseState.assumptions, ARRAY_LIMITS.assumptions);
+    caseState.options = trimArray(caseState.options, ARRAY_LIMITS.options);
+    caseState.options_generated = trimArray(caseState.options_generated, ARRAY_LIMITS.options);
+    caseState.objections = trimArray(caseState.objections, ARRAY_LIMITS.objections);
+    caseState.rebuttals = trimArray(caseState.rebuttals, ARRAY_LIMITS.rebuttals);
+    caseState.unresolved_tensions = trimArray(caseState.unresolved_tensions, ARRAY_LIMITS.objections);
+    caseState.policy_violations = trimArray(caseState.policy_violations, ARRAY_LIMITS.errors);
+    caseState.system_errors = trimArray(caseState.system_errors, ARRAY_LIMITS.errors);
+    caseState.audit_log_refs = trimArray(caseState.audit_log_refs, ARRAY_LIMITS.auditRefs);
+    caseState.audit_refs = trimArray(caseState.audit_refs, ARRAY_LIMITS.auditRefs);
+    caseState.evidence_bundle = {
+      ...(caseState.evidence_bundle || {}),
+      signals: trimArray(caseState.evidence_bundle?.signals, ARRAY_LIMITS.signals),
+      evidence: trimArray(caseState.evidence_bundle?.evidence, ARRAY_LIMITS.evidence)
+    };
+    caseState.stage_outputs = Object.fromEntries(
+      Object.entries(caseState.stage_outputs || {}).map(([key, value]) => [key, compactAgentOutput(value)])
+    );
+    if (caseState.memory) {
+      caseState.memory = {
+        ...caseState.memory,
+        episodic: trimArray(caseState.memory.episodic, 5),
+        semantic: trimArray(caseState.memory.semantic, 5),
+        procedural: trimArray(caseState.memory.procedural, 5)
+      };
+    }
+    if (caseState.shared_memory) {
+      caseState.shared_memory = {
+        ...caseState.shared_memory,
+        episodic: trimArray(caseState.shared_memory.episodic, 5),
+        semantic: trimArray(caseState.shared_memory.semantic, 5),
+        procedural: trimArray(caseState.shared_memory.procedural, 5)
+      };
+    }
+    return caseState;
+  }
+
+  async handleResourceLimit({ caseState, action, error }) {
+    const record = {
+      id: crypto.randomUUID(),
+      agent_id: action?.agent_id || "decision_governor",
+      source_action: action || null,
+      reason: error.message,
+      suggestion: error.suggestion,
+      recorded_at: new Date().toISOString(),
+      raw_payload: error.details || {}
+    };
+    caseState.status = "escalation_required";
+    caseState.resource_limit = record;
+    caseState.system_errors = [...(caseState.system_errors || []), record];
+    caseState.queues = { steering: [], follow_up: [], debate: [] };
+    await this.events.emit("system_error", {
+      case_id: caseState.case_id,
+      agent_id: "decision_governor",
+      input_summary: "Resource limit protection triggered.",
+      output_summary: error.message,
+      raw_payload: record
+    });
+    await this.events.emit("human_escalation_required", {
+      case_id: caseState.case_id,
+      agent_id: "decision_governor",
+      input_summary: "Resource guard terminated the loop.",
+      output_summary: error.suggestion,
+      raw_payload: record
+    });
   }
 
   progressSignature(caseState, queues) {
@@ -574,18 +745,32 @@ export class DecisionLoop {
         llm: this.ai,
         cache: this.cache
       };
-      const managed = await executeToolWithHooks({
-        agentId: "decision_governor",
-        toolName: "manage_memory",
-        input,
-        policy: this.policy,
-        eventBus: this.events,
-        caseId: caseState.case_id
-      });
-      const memory = managed.memory || {};
-      const reflection = managed.reflection || {};
-      const learning = managed.learning || {};
-      validateToolOutput(managed);
+      const [memory, reflection, learning] = await Promise.all([
+        executeToolWithHooks({
+          agentId: "decision_governor",
+          toolName: "extract_memory",
+          input,
+          policy: this.policy,
+          eventBus: this.events,
+          caseId: caseState.case_id
+        }),
+        executeToolWithHooks({
+          agentId: "decision_governor",
+          toolName: "reflect_on_decision",
+          input,
+          policy: this.policy,
+          eventBus: this.events,
+          caseId: caseState.case_id
+        }),
+        executeToolWithHooks({
+          agentId: "decision_governor",
+          toolName: "extract_learning",
+          input,
+          policy: this.policy,
+          eventBus: this.events,
+          caseId: caseState.case_id
+        })
+      ]);
       validateToolOutput(memory);
       validateToolOutput(reflection);
       validateToolOutput(learning);
@@ -695,11 +880,31 @@ export class DecisionLoop {
     if (!preDecision.allowed || consensusLevel < CONSENSUS_RANK.medium || hasUnresolvedTensions) return null;
 
     traceStep("simulation.start", caseState, { user_goal: userGoal });
-    const simulationResult = await this.simulation.runSimulation({
-      ...caseState,
-      user_goal: userGoal || caseState.user_goal,
-      user
-    });
+    let simulationResult;
+    try {
+      simulationResult = await this.simulation.runSimulation({
+        ...cloneJSON(caseState, {}),
+        user_goal: userGoal || caseState.user_goal,
+        user,
+        simulation_isolated: true
+      });
+    } catch (error) {
+      traceStep("simulation.error", caseState, { error: error.message });
+      await this.events.emit("system_error", {
+        case_id: caseState.case_id,
+        agent_id: "simulation_engine",
+        input_summary: "Simulation failed in isolated mode.",
+        output_summary: error.message,
+        raw_payload: {
+          error_category: "simulation_unavailable",
+          is_retriable: true,
+          message: error.message,
+          customer_message: "Simulation was unavailable, so the decision loop continued with governance controls.",
+          suggestion: "Retry simulation before execution or require human approval for high-risk execution."
+        }
+      });
+      return null;
+    }
     caseState.simulation = simulationResult;
     if (simulationResult.best_strategy) {
       caseState.recommended_strategy = simulationResult.best_strategy;
@@ -806,7 +1011,10 @@ export class DecisionLoop {
       output = {
         __system_error: true,
         reason: error.message.includes("CRITICAL TOOL FAILURE") ? error.message : `CRITICAL TOOL FAILURE: ${error.message}`,
-        agent_id: agent.id
+        agent_id: agent.id,
+        error_category: error.error_category || (isResourceLimitError(error) ? "resource_limit" : "tool_execution_failed"),
+        is_retriable: error.is_retriable !== false && !isResourceLimitError(error),
+        suggestion: error.suggestion || "Escalate to the coordinator and stop if failure thresholds are reached."
       };
       traceStep("agent.tool_call.error", caseState, { agent_id: agent.id, tool_name: toolName, error: error.message });
     }
@@ -832,6 +1040,7 @@ export class DecisionLoop {
         raw_payload: output
       });
       this.validateRequiredEvents(requiredEvents, agent.id);
+      this.resourceGuard?.beforeSubrequest("d1", { operation: "case_save_agent_failure", agent_id: agent.id });
       await this.caseStore.saveCase(caseState);
       traceStep("agent.end", caseState, { agent_id: agent.id, tool_name: toolName, status: "critical_failure" });
       return { agent_id: agent.id, output, case_state: caseState };
@@ -877,18 +1086,22 @@ export class DecisionLoop {
     }
 
     this.validateRequiredEvents(requiredEvents, agent.id);
+    this.resourceGuard?.beforeSubrequest("d1", { operation: "case_save_agent", agent_id: agent.id });
     await this.caseStore.saveCase(caseState);
     traceStep("agent.end", caseState, { agent_id: agent.id, tool_name: toolName });
     return { agent_id: agent.id, output, case_state: caseState };
   }
 
   toolInput({ caseState, userGoal, riskState, sector }) {
+    refreshCaseFacts(caseState, userGoal, null);
+    const sharedContext = cloneJSON(caseState.shared_memory || caseState.memory || {}, {});
     return {
       text: userGoal,
       context: {
         ...caseState,
-        memory: caseState.shared_memory || caseState.memory || {},
-        shared_memory: caseState.shared_memory || caseState.memory || {},
+        case_facts: caseState.case_facts,
+        memory: cloneJSON(sharedContext, {}),
+        shared_memory: cloneJSON(sharedContext, {}),
         frameworks: caseState.frameworks || {},
         analysis: caseState.analysis || {},
         digital_twin: caseState.digital_twin || null,
@@ -896,7 +1109,8 @@ export class DecisionLoop {
         sector
       },
       llm: this.ai,
-      cache: this.cache
+      cache: this.cache,
+      resource_guard: this.resourceGuard
     };
   }
 
@@ -910,18 +1124,79 @@ export class DecisionLoop {
     if (!toolName) return;
     const previous = caseState.circuit_breakers?.[toolName] || {};
     const failures = Number(previous.failures || 0) + 1;
+    const globalFailures = Number(caseState.loop?.tool_failure_count || 0) + 1;
+    const opened = failures >= CIRCUIT_FAILURE_THRESHOLD;
     caseState.circuit_breakers = {
       ...(caseState.circuit_breakers || {}),
       [toolName]: {
         failures,
         last_error: error.message,
-        open_until: failures >= 2 ? new Date(Date.now() + 60000).toISOString() : null
+        error_category: error.error_category || "tool_execution_failed",
+        is_retriable: error.is_retriable !== false,
+        suggestion: error.suggestion || "Retry within limits or escalate to a human operator.",
+        open_until: opened ? new Date(Date.now() + CIRCUIT_OPEN_MS).toISOString() : null
       }
+    };
+    caseState.loop = {
+      ...(caseState.loop || {}),
+      tool_failure_count: globalFailures,
+      circuit_breaker_open: opened || globalFailures >= GLOBAL_FAILURE_THRESHOLD,
+      escalation_suggestion: globalFailures >= GLOBAL_FAILURE_THRESHOLD
+        ? "Global tool failure threshold reached; terminate loop and escalate to human review."
+        : caseState.loop?.escalation_suggestion || null
     };
   }
 
+  buildCoordinatorToolRequest({ agent, caseState }) {
+    const toolName = AGENT_TOOL_MAP[agent.id] || agent.allowed_tools?.[0] || null;
+    if (!toolName) {
+      return {
+        stop_reason: "error",
+        tool_calls: [],
+        error: `No governed tool mapped for ${agent.id}.`
+      };
+    }
+    return {
+      stop_reason: "tool_use",
+      coordinator: "decision_governor",
+      agent_id: agent.id,
+      case_facts: caseState.case_facts,
+      tool_calls: [
+        {
+          id: crypto.randomUUID(),
+          name: toolName,
+          arguments: {
+            case_facts: caseState.case_facts,
+            stage: stageForAgent(agent.id),
+            agent_id: agent.id
+          }
+        }
+      ]
+    };
+  }
+
+  checkCoordinatorStopReason(request) {
+    if (request?.stop_reason === "tool_use" && request.tool_calls?.length === 1) return { execute: true };
+    if (["end_turn", "stop_sequence", "max_tokens", "error"].includes(request?.stop_reason)) {
+      return { execute: false, reason: request.stop_reason, error: request.error || null };
+    }
+    return { execute: false, reason: "invalid_stop_reason", error: "Coordinator response must use stop_reason for control flow." };
+  }
+
   async executeAgentTool({ agent, caseState, userGoal, riskState, sector }) {
-    const toolName = AGENT_TOOL_MAP[agent.id] || agent.allowed_tools?.[0];
+    const request = this.buildCoordinatorToolRequest({ agent, caseState });
+    const decision = this.checkCoordinatorStopReason(request);
+    await this.events.emit("state_update", {
+      case_id: caseState.case_id,
+      agent_id: "decision_governor",
+      input_summary: `Coordinator checked stop_reason for ${agent.id}.`,
+      output_summary: request.stop_reason,
+      raw_payload: { request, decision }
+    });
+    if (!decision.execute) {
+      throw new Error(`CRITICAL TOOL FAILURE: ${decision.error || decision.reason}`);
+    }
+    const toolName = request.tool_calls[0].name;
     if (!toolName) {
       return {
         toolName: null,
@@ -946,6 +1221,7 @@ export class DecisionLoop {
 
     try {
       traceStep("tool.execution.start", caseState, { agent_id: agent.id, tool_name: toolName });
+      this.resourceGuard?.beforeSubrequest("tool", { agent_id: agent.id, tool_name: toolName });
       const result = await executeToolWithHooks({
         agentId: agent.id,
         toolName,
@@ -955,7 +1231,7 @@ export class DecisionLoop {
         caseId: caseState.case_id
       });
       if (result?.status === "blocked" || result?.status === "error" || result?.error) {
-        throw new Error(result.message || `Tool ${toolName} failed or was blocked.`);
+        throw new Error(`${result.message || `Tool ${toolName} failed or was blocked.`} Suggestion: ${result.suggestion || "Escalate to the coordinator."}`);
       }
       validateToolOutput(result);
       const validation = validateAgentOutput(agent, result);
@@ -989,6 +1265,7 @@ export class DecisionLoop {
       }
       traceStep("framework_tool.execution.start", caseState, { agent_id: agent.id, tool_name: frameworkTool });
       try {
+        this.resourceGuard?.beforeSubrequest("framework_tool", { agent_id: agent.id, tool_name: frameworkTool });
         const result = await executeToolWithHooks({
           agentId: agent.id,
           toolName: frameworkTool,
@@ -998,7 +1275,7 @@ export class DecisionLoop {
           caseId: caseState.case_id
         });
         if (result?.status === "blocked" || result?.status === "error" || result?.error) {
-          throw new Error(result.message || `Framework tool ${frameworkTool} failed or was blocked.`);
+          throw new Error(`${result.message || `Framework tool ${frameworkTool} failed or was blocked.`} Suggestion: ${result.suggestion || "Continue only if fallback output is sufficient; otherwise escalate."}`);
         }
         validateToolOutput(result);
         this.recordToolSuccess(caseState, frameworkTool);
@@ -1114,6 +1391,13 @@ export class DecisionLoop {
       agent_id: "decision_governor",
       input_summary: `Critical tool failure from ${agentId}`,
       output_summary: record.reason,
+      raw_payload: record
+    });
+    await this.events.emit("human_escalation_required", {
+      case_id: caseState.case_id,
+      agent_id: "decision_governor",
+      input_summary: "Critical failure terminated the loop.",
+      output_summary: error.suggestion || "Human review required before continuing.",
       raw_payload: record
     });
     return null;
@@ -1278,6 +1562,11 @@ export class DecisionLoop {
   }
 
   checkStopConditions(caseState, queues) {
+    if (caseState.loop?.circuit_breaker_open || Number(caseState.loop?.tool_failure_count || 0) >= GLOBAL_FAILURE_THRESHOLD) {
+      caseState.status = "escalation_required";
+      caseState.queues = { steering: [], follow_up: [], debate: [] };
+      return { stop: true, reason: "circuit_breaker_escalation" };
+    }
     if (caseState.status === "escalation_required") return { stop: true, reason: "escalation_required" };
     if (caseState.status === "awaiting_approval") return { stop: true, reason: "human_approval_required" };
     const preDecision = this.consensus.confirmBeforeDecision(caseState);

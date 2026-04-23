@@ -1,6 +1,11 @@
 export function emptyCaseState(caseId, userGoal = "") {
   return {
     case_id: caseId,
+    case_facts: {
+      case_id: caseId,
+      organization_id: null,
+      decision_type: "strategic_decision"
+    },
     created_at: new Date().toISOString(),
     current_stage: 1,
     status: "active",
@@ -171,12 +176,13 @@ export class D1CaseStore {
   }
 
   async listCases(limit = 20, { organizationId = null } = {}) {
+    const boundedLimit = Math.min(Math.max(Number(limit || 20), 1), 100);
     const result = await this.db
       .prepare("SELECT payload FROM decision_cases ORDER BY updated_at DESC LIMIT ?")
-      .bind(Math.max(Number(limit || 20), 100))
+      .bind(boundedLimit)
       .all();
     const cases = (result.results || []).map((row) => parseCasePayload(row.payload, row.case_id)).filter(Boolean);
     const filtered = organizationId ? cases.filter((item) => item.organization_id === organizationId) : cases;
-    return filtered.slice(0, limit);
+    return filtered.slice(0, boundedLimit);
   }
 }

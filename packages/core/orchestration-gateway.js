@@ -3,13 +3,21 @@ import { EventHooks } from "./event-hooks.js";
 import { EventBus } from "../events/event-bus.js";
 import { blendFrameworks } from "../frameworks/framework-blender.js";
 import { selectFrameworks } from "../frameworks/framework-selector.js";
-import { buildOrganizationalIntelligence } from "../memory/d1-memory-store.js";
+import { buildOrganizationalIntelligence, deriveCaseType } from "../memory/d1-memory-store.js";
 import { PolicyEngine } from "../policy/policy-engine.js";
 import { executeToolWithHooks, validateToolOutput } from "../skills/index.js";
 import { emptyCaseState } from "../state/d1-case-store.js";
 
 function summarize(value, max = 240) {
   return JSON.stringify(value || {}).slice(0, max);
+}
+
+function buildCaseFacts(caseState = {}, userGoal = "", user = null) {
+  return {
+    case_id: String(caseState.case_id || ""),
+    organization_id: caseState.organization_id || user?.organization_id || null,
+    decision_type: caseState.decision_type || caseState.case_facts?.decision_type || deriveCaseType(userGoal || caseState.user_goal || "")
+  };
 }
 
 const AGENT_TOOL_MAP = {
@@ -83,6 +91,7 @@ export class OrchestrationGateway {
     caseState.last_modified_by = user?.user_id || caseState.last_modified_by || null;
     caseState.organization_id = caseState.organization_id || user?.organization_id || null;
     caseState.organization_name = caseState.organization_name || user?.organization_name || null;
+    caseState.case_facts = buildCaseFacts(caseState, userGoal, user);
     if (this.digitalTwin?.getLatestTwinState && caseState.organization_id) {
       caseState.digital_twin = await this.digitalTwin.getLatestTwinState({ organizationId: caseState.organization_id, caseState });
       if (!caseState.digital_twin && this.digitalTwin.refreshTwinState) {
@@ -118,6 +127,7 @@ export class OrchestrationGateway {
         text: userGoal,
         context: {
           ...caseState,
+          case_facts: caseState.case_facts,
           memory: caseState.shared_memory || caseState.memory || {},
           shared_memory: caseState.shared_memory || caseState.memory || {},
           frameworks: caseState.frameworks || {},
@@ -207,6 +217,7 @@ export class OrchestrationGateway {
           text: userGoal,
           context: {
             ...caseState,
+            case_facts: caseState.case_facts,
             memory: caseState.shared_memory || caseState.memory || {},
             shared_memory: caseState.shared_memory || caseState.memory || {},
             frameworks: caseState.frameworks || {},

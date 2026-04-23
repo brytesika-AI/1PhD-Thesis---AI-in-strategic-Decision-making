@@ -5,6 +5,7 @@ import { DecisionLoop } from "../../../packages/loop/decision-loop.js";
 import { D1MemoryStore } from "../../../packages/memory/d1-memory-store.js";
 import { PolicyEngine } from "../../../packages/policy/policy-engine.js";
 import { runSimulation } from "../../../packages/simulation/simulation-engine.js";
+import { createResourceGuard, isResourceLimitError } from "../../../packages/runtime/resource-guard.js";
 import { listAgents, listAllAgents, listControlAgents, validateAgentRegistry } from "../../../packages/shared/agent-registry.js";
 import { listToolDefinitions } from "../../../packages/skills/index.js";
 import { D1CaseStore, emptyCaseState } from "../../../packages/state/d1-case-store.js";
@@ -18,6 +19,13 @@ const STATIC_PAGES_ORIGINS = new Set([
   "https://947aba3a.ai-srf-cloudflare.pages.dev",
   "https://65f08d50.ai-srf-cloudflare.pages.dev"
 ]);
+const REQUEST_LIMITS = {
+  maxRequestBytes: 131072,
+  maxSubrequests: 90,
+  maxToolCalls: 24,
+  maxStateBytes: 750000,
+  maxCacheValueBytes: 131072
+};
 
 function allowedCorsOrigin(request) {
   const origin = request.headers.get("Origin");
@@ -191,6 +199,15 @@ async function ensureUser(db, user) {
 }
 
 async function readJson(request) {
+  const contentLength = Number(request.headers.get("Content-Length") || 0);
+  if (contentLength > REQUEST_LIMITS.maxRequestBytes) {
+    const error = new Error(`Request body exceeds ${REQUEST_LIMITS.maxRequestBytes} bytes.`);
+    error.status = 413;
+    error.error_category = "request_too_large";
+    error.is_retriable = false;
+    error.suggestion = "Reduce the prompt or attach only summarized context.";
+    throw error;
+  }
   try {
     return await request.json();
   } catch {
@@ -218,7 +235,7 @@ function gateway(env) {
   });
 }
 
-function decisionLoop(env) {
+function decisionLoop(env, ctx = null) {
   const registryDocument = validateAgentRegistry(agentRegistry);
   return new DecisionLoop({
     registryDocument,
@@ -226,6 +243,8 @@ function decisionLoop(env) {
     auditLog: new D1AuditLog(env.DB),
     ai: env.AI,
     cache: env.CONFIG_CACHE,
+    background: ctx,
+    resourceLimits: REQUEST_LIMITS,
     memoryStore: new D1MemoryStore(env.DB),
     digitalTwin: {
       getLatestTwinState: ({ organizationId }) => getLatestTwinState(env, { organizationId }),
@@ -256,7 +275,7 @@ async function logCommand({ env, caseId, user, action, outputSummary, rawPayload
   });
 }
 
-async function runDecisionCommand({ env, user, body, command, suffix = "", maxIterations = 10 }) {
+async function runDecisionCommand({ env, ctx = null, user, body, command, suffix = "", maxIterations = 10 }) {
   const caseId = body.case_id || crypto.randomUUID();
   traceStep("worker.command.start", { case_id: caseId, command, user_id: user?.user_id || null }, { max_iterations: body.max_iterations || maxIterations });
   const store = new D1CaseStore(env.DB);
@@ -275,7 +294,7 @@ async function runDecisionCommand({ env, user, body, command, suffix = "", maxIt
     rawPayload: { entry_stage: body.entry_stage || existingCase?.current_stage || 1 }
   });
 
-  const result = await decisionLoop(env).run({
+  const result = await decisionLoop(env, ctx).run({
     caseId,
     userGoal,
     maxIterations: body.max_iterations || maxIterations,
@@ -292,11 +311,21 @@ async function runDecisionCommand({ env, user, body, command, suffix = "", maxIt
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    const requestGuard = createResourceGuard({
+      traceId: request.headers.get("Cf-Ray") || crypto.randomUUID(),
+      limits: REQUEST_LIMITS
+    });
+    requestGuard.assertStateSize("request_metadata", {
+      method: request.method,
+      path: url.pathname,
+      content_length: request.headers.get("Content-Length") || null
+    });
     if (url.pathname.startsWith("/api/")) {
       traceStep("ui_to_api_call", {
         method: request.method,
         path: url.pathname,
-        origin: request.headers.get("Origin") || null
+        origin: request.headers.get("Origin") || null,
+        trace_id: requestGuard.snapshot().trace_id
       }, { worker: "ai-srf-governance-worker" });
     }
     if (request.method === "OPTIONS") {
@@ -423,7 +452,7 @@ export default {
         const body = await readJson(request);
         const caseId = body.case_id || crypto.randomUUID();
         traceStep("worker_route_to_decision_loop", { case_id: caseId, path: url.pathname, body }, { max_iterations: body.max_iterations || 12 });
-        const result = await decisionLoop(env).run({
+        const result = await decisionLoop(env, ctx).run({
           caseId,
           userGoal: body.user_goal || body.input || "",
           maxIterations: body.max_iterations || 12,
@@ -444,6 +473,7 @@ export default {
         traceStep("worker_route_to_decision_loop", { case_id: body.case_id || null, path: url.pathname, body }, { command: "run_full_decision_cycle" });
         const { caseId, result } = await runDecisionCommand({
           env,
+          ctx,
           user,
           body,
           command: "run_full_decision_cycle",
@@ -459,6 +489,7 @@ export default {
         const body = await readJson(request);
         const { caseId, result } = await runDecisionCommand({
           env,
+          ctx,
           user,
           body,
           command: "stress_test_decision",
@@ -474,6 +505,7 @@ export default {
         const body = await readJson(request);
         const { caseId, result } = await runDecisionCommand({
           env,
+          ctx,
           user,
           body,
           command: "challenge_assumptions",
@@ -489,6 +521,7 @@ export default {
         const body = await readJson(request);
         const { caseId, result } = await runDecisionCommand({
           env,
+          ctx,
           user,
           body: { ...body, simulation_mode_enabled: true },
           command: "run_simulation_before_decision",
@@ -585,10 +618,17 @@ export default {
       traceStep("worker.error", { path: url.pathname, method: request.method }, { error: error.message });
       ctx.waitUntil(Promise.resolve(console.error(JSON.stringify({
         event: "worker_error",
+        error_category: error.error_category || (isResourceLimitError(error) ? "resource_limit" : "worker_error"),
         message: error.message,
-        path: url.pathname
+        path: url.pathname,
+        suggestion: error.suggestion || "Review the Worker trace and replay the case audit events."
       }))));
-      return jsonResponse(request, { error: error.message }, 500);
+      return jsonResponse(request, {
+        error_category: error.error_category || (isResourceLimitError(error) ? "resource_limit" : "worker_error"),
+        is_retriable: error.is_retriable === true,
+        message: error.message,
+        suggestion: error.suggestion || "Review the Worker trace and replay the case audit events."
+      }, error.status || (isResourceLimitError(error) ? 429 : 500));
     }
   },
 

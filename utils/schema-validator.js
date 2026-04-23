@@ -57,6 +57,46 @@ ${String(current)}
   throw new Error(`Invalid JSON${lastError?.message ? `: ${lastError.message}` : ""}`);
 }
 
+export const TOOL_ERROR_SCHEMA = {
+  required: {
+    error_category: "string",
+    is_retriable: "boolean",
+    message: "string",
+    customer_message: "string",
+    suggestion: "string"
+  }
+};
+
+export function structuredToolError({
+  errorCategory = "tool_execution_failed",
+  isRetriable = true,
+  message = "Tool execution failed.",
+  customerMessage = "The system could not complete one governed tool step.",
+  suggestion = "Retry the tool or escalate if the error persists."
+} = {}) {
+  return {
+    error: true,
+    error_category: String(errorCategory),
+    is_retriable: Boolean(isRetriable),
+    message: String(message),
+    customer_message: String(customerMessage),
+    suggestion: String(suggestion)
+  };
+}
+
+export function isStructuredToolError(value = {}) {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      typeof value.error_category === "string" &&
+      typeof value.is_retriable === "boolean" &&
+      typeof value.message === "string" &&
+      typeof value.customer_message === "string" &&
+      typeof value.suggestion === "string"
+  );
+}
+
 export const TOOL_OUTPUT_SCHEMAS = {
   gather_evidence: {
     required: { evidence: "array", confidence: "number" },
@@ -210,10 +250,11 @@ export async function safeTool(tool, state = {}) {
     }
     return parsed;
   } catch (error) {
-    return {
-      error: true,
-      message: error.message
-    };
+    return structuredToolError({
+      message: error.message,
+      customerMessage: "The tool returned invalid or incomplete structured data.",
+      suggestion: "Retry with the same JSON input or use deterministic fallback output."
+    });
   }
 }
 
@@ -229,7 +270,14 @@ export async function safeToolExecution(tool, state = {}, { toolName = "tool", s
       tool_name: toolName,
       message: error.message
     });
-    if (fallback) return validateToolResult(toolName, fallback, schema);
+    const structuredError = structuredToolError({
+      errorCategory: error.message?.toLowerCase().includes("timeout") ? "timeout" : "tool_execution_failed",
+      isRetriable: true,
+      message: error.message,
+      customerMessage: `The ${toolName} tool degraded to deterministic output.`,
+      suggestion: "Continue with fallback output and review the audit trace before execution."
+    });
+    if (fallback) return validateToolResult(toolName, { ...fallback, ...structuredError }, schema);
     throw error;
   }
 }
