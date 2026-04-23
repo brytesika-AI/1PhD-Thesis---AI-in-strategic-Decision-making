@@ -11,9 +11,15 @@ import { executeToolWithHooks, validateToolOutput } from "../skills/index.js";
 import { emptyCaseState } from "../state/d1-case-store.js";
 import { DecisionQueues } from "./queues.js";
 
-const MAX_TOOL_ATTEMPTS = 2;
 const REQUIRED_STAGE_EVENTS = new Set(["agent_start", "agent_end", "state_updated", "consensus_update"]);
 const CONSENSUS_RANK = { unknown: 0, low: 1, medium: 2, high: 3 };
+const REQUIRED_D1_TABLES = [
+  "decision_cases",
+  "audit_events",
+  "digital_twin_state",
+  "organization_memory",
+  "agent_learning_log"
+];
 const AGENT_TOOL_MAP = {
   tracker: "gather_evidence",
   induna: "extract_assumptions",
@@ -90,6 +96,22 @@ const AGENT_OUTPUT_CONTRACTS = {
     ]
   }
 };
+
+function compactTrace(value, maxChars = 2400) {
+  try {
+    const text = JSON.stringify(value);
+    if (!text || text.length <= maxChars) return value;
+    return { truncated: true, preview: text.slice(0, maxChars) };
+  } catch (error) {
+    return { unserializable: true, message: error.message };
+  }
+}
+
+function traceStep(stepName, rawState = {}, rawResult = {}) {
+  const state = compactTrace(rawState);
+  const result = compactTrace(rawResult);
+  console.log("STEP:", stepName, { state, result });
+}
 
 function stageForAgent(agentId) {
   const index = PIPELINE_ORDER.indexOf(agentId);
@@ -212,8 +234,10 @@ export class DecisionLoop {
   }
 
   async run({ caseId, userGoal, maxIterations = this.maxIterations, riskState = "ELEVATED", sector = "general", user = null, entryStage = 1, simulationModeEnabled = false }) {
+    traceStep("decision_loop.start", { case_id: caseId, user_goal: userGoal, entry_stage: entryStage }, { max_iterations: maxIterations, risk_state: riskState, sector });
     await this.validateSystem({ caseId });
     let caseState = await this.caseStore.getCase(caseId);
+    traceStep("decision_loop.case_loaded", { case_id: caseId }, { found: Boolean(caseState), stop_reason: caseState?.loop?.stop_reason || null });
     if (caseState?.organization_id && user?.organization_id && caseState.organization_id !== user.organization_id) {
       throw new Error("Case not found for organization.");
     }
@@ -237,6 +261,18 @@ export class DecisionLoop {
     caseState.last_modified_by = user?.user_id || caseState.last_modified_by || null;
     caseState.organization_id = caseState.organization_id || user?.organization_id || null;
     caseState.organization_name = caseState.organization_name || user?.organization_name || null;
+
+    if (caseState.loop?.stop_reason) {
+      traceStep("decision_loop.loop_stopped.return_final", caseState, { stop_reason: caseState.loop.stop_reason });
+      return {
+        case_id: caseId,
+        stop_reason: caseState.loop.stop_reason,
+        organizational_intelligence: caseState.organizational_intelligence,
+        case_state: caseState,
+        last_result: null
+      };
+    }
+
     caseState.simulation_mode_enabled = Boolean(simulationModeEnabled || caseState.simulation_mode_enabled);
     caseState.digital_twin = await this.retrieveDigitalTwin({ caseState, caseId, user });
     caseState.shared_memory = await this.retrieveMemory({ caseState, caseId, userGoal, user });
@@ -259,13 +295,16 @@ export class DecisionLoop {
     let stopReason = null;
     let lastResult = null;
     for (let i = 0; i < maxIterations; i += 1) {
+      traceStep("decision_loop.iteration_start", caseState, { iteration: i + 1, queues: queues.snapshot() });
       const next = queues.dequeueNext() || this.selectNextAction(caseState);
       if (!next?.item && !next?.agent_id) {
         stopReason = "no_progress";
+        traceStep("decision_loop.no_next_action", caseState, { stop_reason: stopReason });
         break;
       }
 
       const action = next.item || next;
+      traceStep("state_to_next_agent", caseState, { action, queue: next.queue || "governor" });
       await this.events.emit("queue_dequeued", {
         case_id: caseId,
         agent_id: "decision_governor",
@@ -285,6 +324,7 @@ export class DecisionLoop {
       caseState = lastResult.case_state;
       if (caseState.status === "critical_failure") {
         stopReason = "critical_tool_failure";
+        traceStep("decision_loop.critical_failure_stop", caseState, { stop_reason: stopReason });
         break;
       }
       caseState.queues = queues.snapshot();
@@ -301,6 +341,7 @@ export class DecisionLoop {
       }
 
       const stopCheck = this.checkStopConditions(caseState, queues);
+      traceStep("decision_loop.stop_check", caseState, stopCheck);
       if (stopCheck.stop) {
         stopReason = stopCheck.reason;
         break;
@@ -308,6 +349,7 @@ export class DecisionLoop {
     }
 
     caseState.loop = { ...(caseState.loop || {}), stop_reason: stopReason || "max_iterations" };
+    traceStep("decision_loop.termination", caseState, { stop_reason: caseState.loop.stop_reason });
     if (caseState.loop.stop_reason === "decision_reached") {
       caseState.status = "closed";
       await this.events.emit("case_closed", {
@@ -361,22 +403,36 @@ export class DecisionLoop {
   }
 
   async validateSystem({ caseId }) {
+    traceStep("validate_system.start", { case_id: caseId }, { required_tables: REQUIRED_D1_TABLES });
     try {
       if (this.cache?.put) {
-        await this.cache.put("healthcheck", "ok", { expirationTtl: 60 });
+        const key = `case:${caseId || "healthcheck"}:system`;
+        const safeKey = new TextEncoder().encode(key).length < 512 ? key : `case:${crypto.randomUUID()}:system`;
+        await this.cache.put(safeKey, JSON.stringify({ ok: true }), { expirationTtl: 60 });
+        traceStep("validate_system.kv", { case_id: caseId, key: safeKey }, { ok: true, key_bytes: new TextEncoder().encode(safeKey).length });
       }
       if (this.caseStore?.db?.prepare) {
         await this.caseStore.db.prepare("SELECT 1").run();
+        for (const table of REQUIRED_D1_TABLES) {
+          await this.caseStore.db.prepare(`SELECT 1 FROM ${table} LIMIT 1`).first();
+        }
+        traceStep("validate_system.d1", { case_id: caseId }, { ok: true, tables: REQUIRED_D1_TABLES });
       }
+      traceStep("validate_system.end", { case_id: caseId }, { ok: true });
       return true;
     } catch (error) {
-      await this.events.emit("system_error", {
-        case_id: caseId,
-        agent_id: "decision_governor",
-        input_summary: "Infrastructure validation failed before decision loop.",
-        output_summary: error.message,
-        raw_payload: { error: error.message }
-      });
+      traceStep("validate_system.error", { case_id: caseId }, { error: error.message });
+      try {
+        await this.events.emit("system_error", {
+          case_id: caseId,
+          agent_id: "decision_governor",
+          input_summary: "Infrastructure validation failed before decision loop.",
+          output_summary: error.message,
+          raw_payload: { error: error.message }
+        });
+      } catch (emitError) {
+        console.error("STEP:", "validate_system.audit_error", { state: { case_id: caseId }, result: { error: emitError.message } });
+      }
       throw new Error(`INFRASTRUCTURE VALIDATION FAILED: ${error.message}`);
     }
   }
@@ -385,7 +441,13 @@ export class DecisionLoop {
     const emptyMemory = { episodic: [], semantic: [], procedural: [], retrieval: { strategy: "memory_store_unavailable" } };
     if (!this.memoryStore) return caseState.memory || emptyMemory;
     try {
+      traceStep("memory.retrieve.start", caseState, { case_id: caseId });
       const memory = await this.memoryStore.retrieve({ caseId, userGoal, user, caseState });
+      traceStep("memory.retrieve.end", caseState, {
+        episodic: memory.episodic.length,
+        semantic: memory.semantic.length,
+        procedural: memory.procedural.length
+      });
       await this.events.emit("memory_retrieved", {
         case_id: caseId,
         agent_id: "decision_governor",
@@ -395,6 +457,7 @@ export class DecisionLoop {
       });
       return memory;
     } catch (error) {
+      traceStep("memory.retrieve.error", caseState, { error: error.message });
       await this.events.emit("system_error", {
         case_id: caseId,
         agent_id: "decision_governor",
@@ -407,10 +470,12 @@ export class DecisionLoop {
   }
 
   async selectFrameworksForCase({ caseState, caseId, userGoal }) {
+    traceStep("framework_selection.start", caseState, { case_id: caseId });
     const selection = await selectFrameworks({
       ...caseState,
       case_description: caseState.case_description || userGoal || caseState.user_goal
     }, { ai: caseState.framework_selector_llm_enabled ? this.ai : null });
+    traceStep("framework_selection.end", caseState, selection);
     await this.events.emit("framework_selected", {
       case_id: caseId,
       agent_id: "framework_selector",
@@ -426,7 +491,15 @@ export class DecisionLoop {
     const organizationId = user?.organization_id || caseState.organization_id;
     if (!organizationId) return caseState.digital_twin || null;
     try {
-      const digitalTwin = await this.digitalTwin.getLatestTwinState({ organizationId, caseState });
+      traceStep("digital_twin.load.start", caseState, { organization_id: organizationId });
+      let digitalTwin = await this.digitalTwin.getLatestTwinState({ organizationId, caseState });
+      if (!digitalTwin && this.digitalTwin.refreshTwinState) {
+        traceStep("digital_twin.refresh.start", caseState, { organization_id: organizationId });
+        const refreshed = await this.digitalTwin.refreshTwinState({ organizationId, caseState });
+        digitalTwin = Array.isArray(refreshed?.updated) ? refreshed.updated[0] : refreshed;
+        traceStep("digital_twin.refresh.end", caseState, { loaded: Boolean(digitalTwin), digital_twin: digitalTwin });
+      }
+      traceStep("digital_twin.load.end", caseState, { loaded: Boolean(digitalTwin), risk_state: digitalTwin?.risk_state || null });
       await this.events.emit("state_update", {
         case_id: caseId,
         agent_id: "digital_twin_engine",
@@ -439,6 +512,7 @@ export class DecisionLoop {
       });
       return digitalTwin;
     } catch (error) {
+      traceStep("digital_twin.load.error", caseState, { error: error.message });
       await this.events.emit("system_error", {
         case_id: caseId,
         agent_id: "digital_twin_engine",
@@ -454,6 +528,7 @@ export class DecisionLoop {
     if (!this.memoryStore) return null;
     const outcome = caseState.status === "escalation_required" || caseState.consensus?.level === "low" ? "failure" : "success";
     try {
+      traceStep("memory.write.start", caseState, { outcome });
       const input = {
         text: userGoal,
         context: caseState,
@@ -511,8 +586,10 @@ export class DecisionLoop {
         output_summary: `Memory stored with ${outcome} outcome.`,
         raw_payload: { outcome, memory, learning }
       });
+      traceStep("memory.write.end", caseState, { outcome, memory, learning });
       return memory;
     } catch (error) {
+      traceStep("memory.write.error", caseState, { error: error.message });
       await this.events.emit("system_error", {
         case_id: caseState.case_id,
         agent_id: "decision_governor",
@@ -530,8 +607,10 @@ export class DecisionLoop {
     if (!organizationId) return null;
     const outcome = caseState.status === "escalation_required" || caseState.consensus?.level === "low" ? "failure" : "success";
     try {
+      traceStep("digital_twin.feedback.start", caseState, { organization_id: organizationId, outcome });
       const digitalTwin = await this.digitalTwin.updateDecisionOutcome({ organizationId, caseState, outcome });
       caseState.digital_twin = digitalTwin;
+      traceStep("digital_twin.feedback.end", caseState, { organization_id: organizationId, digital_twin: digitalTwin });
       await this.events.emit("state_update", {
         case_id: caseState.case_id,
         agent_id: "digital_twin_engine",
@@ -541,6 +620,7 @@ export class DecisionLoop {
       });
       return digitalTwin;
     } catch (error) {
+      traceStep("digital_twin.feedback.error", caseState, { organization_id: organizationId, error: error.message });
       await this.events.emit("system_error", {
         case_id: caseState.case_id,
         agent_id: "digital_twin_engine",
@@ -553,8 +633,10 @@ export class DecisionLoop {
   }
 
   async generateNarrative({ caseState }) {
+    traceStep("narrative.start", caseState, { mode: caseState.narrative_mode || "board" });
     const narrative = generateStrategicNarrative(caseState, caseState.narrative_mode || "board");
     caseState.narrative = narrative;
+    traceStep("narrative.end", caseState, narrative);
     await this.events.emit("narrative_generated", {
       case_id: caseState.case_id,
       agent_id: "narrative_engine",
@@ -585,6 +667,7 @@ export class DecisionLoop {
     const hasUnresolvedTensions = (caseState.consensus?.unresolved_tensions || []).length > 0 || (caseState.unresolved_tensions || []).length > 0;
     if (!preDecision.allowed || consensusLevel < CONSENSUS_RANK.medium || hasUnresolvedTensions) return null;
 
+    traceStep("simulation.start", caseState, { user_goal: userGoal });
     const simulationResult = await this.simulation.runSimulation({
       ...caseState,
       user_goal: userGoal || caseState.user_goal,
@@ -625,26 +708,39 @@ export class DecisionLoop {
         ];
       }
     }
+    traceStep("simulation.end", caseState, simulationResult);
     return simulationResult;
   }
 
   selectNextAction(caseState) {
-    if (caseState.status === "awaiting_approval") return null;
+    let action = null;
+    if (caseState.status === "awaiting_approval") {
+      traceStep("select_next_action", caseState, { action: null, reason: "awaiting_approval" });
+      return null;
+    }
     if (caseState.current_stage && caseState.current_stage <= 6) {
-      return defaultActionForStage(caseState.current_stage);
+      action = defaultActionForStage(caseState.current_stage);
+      traceStep("select_next_action", caseState, { action });
+      return action;
     }
     if (!caseState.verification_chain?.policy_sentinel_validated) {
-      return { type: "agent_turn", agent_id: "policy_sentinel", reason: "pre_decision_policy_validation" };
+      action = { type: "agent_turn", agent_id: "policy_sentinel", reason: "pre_decision_policy_validation" };
+      traceStep("select_next_action", caseState, { action });
+      return action;
     }
     if (!caseState.verification_chain?.consensus_tracker_confirmed) {
-      return { type: "agent_turn", agent_id: "consensus_tracker", reason: "pre_decision_consensus_validation" };
+      action = { type: "agent_turn", agent_id: "consensus_tracker", reason: "pre_decision_consensus_validation" };
+      traceStep("select_next_action", caseState, { action });
+      return action;
     }
+    traceStep("select_next_action", caseState, { action: null, reason: "no_action" });
     return null;
   }
 
   async executeAgentTurn({ caseState, queues, action, userGoal, riskState, sector }) {
     const agent = getAgent(this.registryDocument, action.agent_id);
     if (!agent) throw new Error(`Unknown loop agent: ${action.agent_id}`);
+    traceStep("agent.start", caseState, { agent_id: agent.id, action });
     const requiredEvents = new Set();
     const emit = async (eventType, payload = {}) => {
       await this.events.emit(eventType, payload);
@@ -668,6 +764,7 @@ export class DecisionLoop {
     let toolName;
     let toolResults;
     try {
+      traceStep("agent.tool_call.start", caseState, { agent_id: agent.id });
       ({ output, toolName, toolResults } = await this.executeAgentTool({
         agent,
         caseState,
@@ -675,6 +772,7 @@ export class DecisionLoop {
         riskState,
         sector
       }));
+      traceStep("agent.tool_call.end", caseState, { agent_id: agent.id, tool_name: toolName, output });
     } catch (error) {
       toolName = AGENT_TOOL_MAP[agent.id] || agent.allowed_tools?.[0] || null;
       toolResults = {};
@@ -683,6 +781,7 @@ export class DecisionLoop {
         reason: error.message.includes("CRITICAL TOOL FAILURE") ? error.message : `CRITICAL TOOL FAILURE: ${error.message}`,
         agent_id: agent.id
       };
+      traceStep("agent.tool_call.error", caseState, { agent_id: agent.id, tool_name: toolName, error: error.message });
     }
     if (output.__system_error) {
       await this.handleCriticalToolFailure({ caseState, agentId: agent.id, action, error: output });
@@ -707,12 +806,13 @@ export class DecisionLoop {
       });
       this.validateRequiredEvents(requiredEvents, agent.id);
       await this.caseStore.saveCase(caseState);
+      traceStep("agent.end", caseState, { agent_id: agent.id, tool_name: toolName, status: "critical_failure" });
       return { agent_id: agent.id, output, case_state: caseState };
     }
 
     output.tool_results = toolResults;
 
-    await this.updateCaseStateFromAgent(caseState, agent.id, action.stage, output);
+    caseState = await this.mergeState(caseState, { agentId: agent.id, stage: action.stage, output });
     const consensus = this.consensus.update(caseState, { agentId: agent.id, output });
     await emit("state_updated", {
       case_id: caseState.case_id,
@@ -751,6 +851,7 @@ export class DecisionLoop {
 
     this.validateRequiredEvents(requiredEvents, agent.id);
     await this.caseStore.saveCase(caseState);
+    traceStep("agent.end", caseState, { agent_id: agent.id, tool_name: toolName });
     return { agent_id: agent.id, output, case_state: caseState };
   }
 
@@ -775,62 +876,59 @@ export class DecisionLoop {
       throw new Error(`CRITICAL TOOL FAILURE: Framework reasoning failed for ${agent.id}: ${error.message}`);
     }
 
-    let lastError = null;
-    for (let attempt = 1; attempt <= MAX_TOOL_ATTEMPTS; attempt += 1) {
-      try {
-        const result = await executeToolWithHooks({
-          agentId: agent.id,
-          toolName,
-          input: {
-            text: userGoal,
-            context: {
-              ...caseState,
-              memory: caseState.shared_memory || caseState.memory || {},
-              shared_memory: caseState.shared_memory || caseState.memory || {},
-              frameworks: caseState.frameworks || {},
-              analysis: caseState.analysis || {},
-              digital_twin: caseState.digital_twin || null,
-              risk_state: riskState,
-              sector
-            },
-            llm: this.ai,
-            cache: this.cache
-          },
-          policy: this.policy,
-          eventBus: this.events,
-          caseId: caseState.case_id
-        });
-        if (result?.status === "blocked" || result?.status === "error") {
-          lastError = result.message || `Tool ${toolName} failed or was blocked.`;
-          continue;
-        }
-        validateToolOutput(result);
-        const validation = validateAgentOutput(agent, result);
-        if (!validation.valid) {
-          lastError = validation.reason;
-          continue;
-        }
-        return {
-          toolName,
-          toolResults: { ...frameworkResults, [toolName]: { ...result } },
-          output: {
-            ...result,
+    try {
+      traceStep("tool.execution.start", caseState, { agent_id: agent.id, tool_name: toolName });
+      const result = await executeToolWithHooks({
+        agentId: agent.id,
+        toolName,
+        input: {
+          text: userGoal,
+          context: {
+            ...caseState,
+            memory: caseState.shared_memory || caseState.memory || {},
+            shared_memory: caseState.shared_memory || caseState.memory || {},
             frameworks: caseState.frameworks || {},
-            analysis: caseState.analysis || {}
-          }
-        };
-      } catch (error) {
-        lastError = error.message;
-        continue;
+            analysis: caseState.analysis || {},
+            digital_twin: caseState.digital_twin || null,
+            risk_state: riskState,
+            sector
+          },
+          llm: this.ai,
+          cache: this.cache
+        },
+        policy: this.policy,
+        eventBus: this.events,
+        caseId: caseState.case_id
+      });
+      if (result?.status === "blocked" || result?.status === "error" || result?.error) {
+        throw new Error(result.message || `Tool ${toolName} failed or was blocked.`);
       }
+      validateToolOutput(result);
+      const validation = validateAgentOutput(agent, result);
+      if (!validation.valid) {
+        throw new Error(validation.reason);
+      }
+      traceStep("tool.execution.end", caseState, { agent_id: agent.id, tool_name: toolName, result });
+      return {
+        toolName,
+        toolResults: { ...frameworkResults, [toolName]: { ...result } },
+        output: {
+          ...result,
+          frameworks: caseState.frameworks || {},
+          analysis: caseState.analysis || {}
+        }
+      };
+    } catch (error) {
+      traceStep("tool.execution.error", caseState, { agent_id: agent.id, tool_name: toolName, error: error.message });
+      throw new Error(`CRITICAL TOOL FAILURE: Tool ${toolName} failed: ${error.message}`);
     }
-    throw new Error(`CRITICAL TOOL FAILURE: Tool ${toolName} failed after ${MAX_TOOL_ATTEMPTS} attempts: ${lastError}`);
   }
 
   async executeFrameworkTools({ agent, caseState, userGoal, riskState, sector }) {
     const frameworkTools = this.frameworkToolsForAgent(caseState, agent.id);
     const results = {};
     for (const frameworkTool of frameworkTools) {
+      traceStep("framework_tool.execution.start", caseState, { agent_id: agent.id, tool_name: frameworkTool });
       const result = await executeToolWithHooks({
         agentId: agent.id,
         toolName: frameworkTool,
@@ -853,12 +951,13 @@ export class DecisionLoop {
         eventBus: this.events,
         caseId: caseState.case_id
       });
-      if (result?.status === "blocked" || result?.status === "error") {
+      if (result?.status === "blocked" || result?.status === "error" || result?.error) {
         throw new Error(result.message || `Framework tool ${frameworkTool} failed or was blocked.`);
       }
       validateToolOutput(result);
       this.mergeFrameworkOutput(caseState, frameworkTool, result);
       results[frameworkTool] = { ...result };
+      traceStep("framework_tool.execution.end", caseState, { agent_id: agent.id, tool_name: frameworkTool, result });
     }
     return results;
   }
@@ -953,6 +1052,16 @@ export class DecisionLoop {
       raw_payload: record
     });
     return null;
+  }
+
+  async mergeState(caseState, { agentId, stage, output }) {
+    await this.updateCaseStateFromAgent(caseState, agentId, stage, output);
+    traceStep("result_to_state_update", caseState, {
+      agent_id: agentId,
+      stage,
+      output_summary: summarize(output)
+    });
+    return caseState;
   }
 
   async updateCaseStateFromAgent(caseState, agentId, stage, output) {

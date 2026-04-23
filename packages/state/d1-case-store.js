@@ -121,6 +121,14 @@ export function emptyCaseState(caseId, userGoal = "") {
   };
 }
 
+function parseCasePayload(payload, caseId = "unknown") {
+  try {
+    return payload ? JSON.parse(payload) : null;
+  } catch (error) {
+    throw new Error(`CASE_STATE_JSON_PARSE_FAILED for ${caseId}: ${error.message}`);
+  }
+}
+
 export class D1CaseStore {
   constructor(db) {
     this.db = db;
@@ -131,7 +139,7 @@ export class D1CaseStore {
       .prepare("SELECT payload FROM decision_cases WHERE case_id = ?")
       .bind(caseId)
       .first();
-    const caseState = row?.payload ? JSON.parse(row.payload) : null;
+    const caseState = parseCasePayload(row?.payload, caseId);
     if (!caseState) return null;
     if (organizationId && caseState.organization_id !== organizationId) return null;
     return caseState;
@@ -167,7 +175,7 @@ export class D1CaseStore {
       .prepare("SELECT payload FROM decision_cases ORDER BY updated_at DESC LIMIT ?")
       .bind(Math.max(Number(limit || 20), 100))
       .all();
-    const cases = (result.results || []).map((row) => JSON.parse(row.payload));
+    const cases = (result.results || []).map((row) => parseCasePayload(row.payload, row.case_id)).filter(Boolean);
     const filtered = organizationId ? cases.filter((item) => item.organization_id === organizationId) : cases;
     return filtered.slice(0, limit);
   }

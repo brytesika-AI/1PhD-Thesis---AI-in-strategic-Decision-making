@@ -53,6 +53,22 @@ function jsonResponse(request, body, status = 200, extraHeaders = {}) {
   });
 }
 
+function compactTrace(value, maxChars = 1600) {
+  try {
+    const text = JSON.stringify(value);
+    if (!text || text.length <= maxChars) return value;
+    return { truncated: true, preview: text.slice(0, maxChars) };
+  } catch (error) {
+    return { unserializable: true, message: error.message };
+  }
+}
+
+function traceStep(stepName, rawState = {}, rawResult = {}) {
+  const state = compactTrace(rawState);
+  const result = compactTrace(rawResult);
+  console.log("STEP:", stepName, { state, result });
+}
+
 function eventStreamResponse(request, events) {
   const body = events
     .map((event) => `event: ${event.event_type}\ndata: ${JSON.stringify(event)}\n`)
@@ -193,6 +209,7 @@ function gateway(env) {
     memoryStore: new D1MemoryStore(env.DB),
     digitalTwin: {
       getLatestTwinState: ({ organizationId }) => getLatestTwinState(env, { organizationId }),
+      refreshTwinState: ({ organizationId }) => updateDigitalTwin(env, { organizationId }),
       updateDecisionOutcome: ({ organizationId, caseState, outcome }) => updateTwinWithDecisionOutcome(env, { organizationId, caseState, outcome })
     },
     simulation: {
@@ -212,6 +229,7 @@ function decisionLoop(env) {
     memoryStore: new D1MemoryStore(env.DB),
     digitalTwin: {
       getLatestTwinState: ({ organizationId }) => getLatestTwinState(env, { organizationId }),
+      refreshTwinState: ({ organizationId }) => updateDigitalTwin(env, { organizationId }),
       updateDecisionOutcome: ({ organizationId, caseState, outcome }) => updateTwinWithDecisionOutcome(env, { organizationId, caseState, outcome })
     },
     simulation: {
@@ -240,6 +258,7 @@ async function logCommand({ env, caseId, user, action, outputSummary, rawPayload
 
 async function runDecisionCommand({ env, user, body, command, suffix = "", maxIterations = 10 }) {
   const caseId = body.case_id || crypto.randomUUID();
+  traceStep("worker.command.start", { case_id: caseId, command, user_id: user?.user_id || null }, { max_iterations: body.max_iterations || maxIterations });
   const store = new D1CaseStore(env.DB);
   const existingCase = await store.getCase(caseId, { organizationId: user.organization_id });
   const userGoal = [
@@ -266,12 +285,20 @@ async function runDecisionCommand({ env, user, body, command, suffix = "", maxIt
     entryStage: body.entry_stage || existingCase?.current_stage || 1,
     simulationModeEnabled: Boolean(body.simulation_mode_enabled)
   });
+  traceStep("worker.command.end", { case_id: caseId, command }, { stop_reason: result.stop_reason, status: result.case_state?.status });
   return { caseId, result };
 }
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname.startsWith("/api/")) {
+      traceStep("ui_to_api_call", {
+        method: request.method,
+        path: url.pathname,
+        origin: request.headers.get("Origin") || null
+      }, { worker: "ai-srf-governance-worker" });
+    }
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: corsHeadersFor(request) });
     }
@@ -376,6 +403,7 @@ export default {
       if (url.pathname === "/api/orchestrate" && request.method === "POST") {
         const body = await readJson(request);
         const caseId = body.case_id || crypto.randomUUID();
+        traceStep("worker_route_to_gateway", { case_id: caseId, path: url.pathname, body }, { stage: body.stage || 1 });
         const result = await gateway(env).executeStage({
           caseId,
           stage: body.stage || 1,
@@ -385,6 +413,7 @@ export default {
           user,
           simulationModeEnabled: Boolean(body.simulation_mode_enabled)
         });
+        traceStep("gateway_to_api_response", { case_id: caseId }, { status: result.status || 200, has_case_state: Boolean(result.case_state) });
         return jsonResponse(request, { case_id: caseId, ...result }, result.status || 200);
       }
 
@@ -393,6 +422,7 @@ export default {
         if (!authz.allowed) return jsonResponse(request, { error: authz.error }, authz.status);
         const body = await readJson(request);
         const caseId = body.case_id || crypto.randomUUID();
+        traceStep("worker_route_to_decision_loop", { case_id: caseId, path: url.pathname, body }, { max_iterations: body.max_iterations || 12 });
         const result = await decisionLoop(env).run({
           caseId,
           userGoal: body.user_goal || body.input || "",
@@ -402,6 +432,7 @@ export default {
           user,
           simulationModeEnabled: Boolean(body.simulation_mode_enabled)
         });
+        traceStep("decision_loop_to_api_response", { case_id: caseId }, { stop_reason: result.stop_reason, status: result.case_state?.status });
         return jsonResponse(request, { case_id: caseId, ...result }, result.status || 200);
       }
 
@@ -410,6 +441,7 @@ export default {
         if (!authz.allowed) return jsonResponse(request, { error: authz.error }, authz.status);
         const body = await readJson(request);
         console.log("Decision loop triggered", body.case_id || "(new case)");
+        traceStep("worker_route_to_decision_loop", { case_id: body.case_id || null, path: url.pathname, body }, { command: "run_full_decision_cycle" });
         const { caseId, result } = await runDecisionCommand({
           env,
           user,
@@ -417,6 +449,7 @@ export default {
           command: "run_full_decision_cycle",
           maxIterations: 10
         });
+        traceStep("decision_loop_to_api_response", { case_id: caseId }, { stop_reason: result.stop_reason, status: result.case_state?.status });
         return jsonResponse(request, { case_id: caseId, ...result }, result.status || 200);
       }
 
@@ -549,6 +582,7 @@ export default {
 
       return jsonResponse(request, { error: "Not found" }, 404);
     } catch (error) {
+      traceStep("worker.error", { path: url.pathname, method: request.method }, { error: error.message });
       ctx.waitUntil(Promise.resolve(console.error(JSON.stringify({
         event: "worker_error",
         message: error.message,

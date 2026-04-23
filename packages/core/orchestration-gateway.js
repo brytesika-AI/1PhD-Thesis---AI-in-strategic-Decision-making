@@ -85,6 +85,10 @@ export class OrchestrationGateway {
     caseState.organization_name = caseState.organization_name || user?.organization_name || null;
     if (this.digitalTwin?.getLatestTwinState && caseState.organization_id) {
       caseState.digital_twin = await this.digitalTwin.getLatestTwinState({ organizationId: caseState.organization_id, caseState });
+      if (!caseState.digital_twin && this.digitalTwin.refreshTwinState) {
+        const refreshed = await this.digitalTwin.refreshTwinState({ organizationId: caseState.organization_id, caseState });
+        caseState.digital_twin = Array.isArray(refreshed?.updated) ? refreshed.updated[0] : refreshed;
+      }
     }
     if (this.memoryStore) {
       caseState.shared_memory = await this.memoryStore.retrieve({ caseId, userGoal, user, caseState });

@@ -95,6 +95,71 @@ test("failure injection: missing memory store data is logged and execution conti
   assert.ok(result.case_state.narrative.executive_summary);
 });
 
+test("stopped decision loop returns final state until an explicit reopen clears stop reason", async () => {
+  const { loop, auditLog } = makeLoop({ ai: aiAlways("[object Object]") });
+  const first = await loop.run({
+    caseId: "INT-STOPPED",
+    userGoal: "Cloud migration with load shedding + POPIA risk",
+    maxIterations: 1,
+    user: testUser()
+  });
+  const beforeReplay = await auditLog.replaySummary("INT-STOPPED");
+  const beforeAgentStarts = beforeReplay.events.filter((event) => event.event_type === "agent_start").length;
+
+  const second = await loop.run({
+    caseId: "INT-STOPPED",
+    userGoal: "Cloud migration with load shedding + POPIA risk",
+    maxIterations: 12,
+    user: testUser()
+  });
+  const afterReplay = await auditLog.replaySummary("INT-STOPPED");
+  const afterAgentStarts = afterReplay.events.filter((event) => event.event_type === "agent_start").length;
+
+  assert.equal(first.stop_reason, "max_iterations");
+  assert.equal(second.stop_reason, "max_iterations");
+  assert.equal(afterAgentStarts, beforeAgentStarts);
+  assert.deepEqual(second.case_state.stage_outputs, first.case_state.stage_outputs);
+});
+
+test("decision loop refreshes digital twin when no latest organization state exists", async () => {
+  const digitalTwin = {
+    async getLatestTwinState() {
+      return null;
+    },
+    async refreshTwinState({ organizationId }) {
+      return {
+        updated: [{
+          organization_id: organizationId,
+          timestamp: "2026-04-23T10:00:00.000Z",
+          environment_state: { load_shedding: { stage: 4 } },
+          operational_state: { system_metrics: { uptime_pct: 98.2 } },
+          risk_state: { level: "high", score: 0.67 },
+          decision_state: {},
+          last_updated: "2026-04-23T10:00:00.000Z"
+        }]
+      };
+    },
+    async updateDecisionOutcome({ organizationId, caseState }) {
+      return {
+        ...caseState.digital_twin,
+        organization_id: organizationId,
+        decision_state: { last_case_id: caseState.case_id }
+      };
+    }
+  };
+  const { loop } = makeLoop({ ai: aiAlways("[object Object]"), digitalTwin });
+
+  const result = await loop.run({
+    caseId: "INT-TWIN-REFRESH",
+    userGoal: "Cloud migration with load shedding + POPIA risk",
+    maxIterations: 1,
+    user: testUser({ organization_id: "org-refresh" })
+  });
+
+  assert.equal(result.case_state.digital_twin.organization_id, "org-refresh");
+  assert.equal(result.case_state.digital_twin.risk_state.level, "high");
+});
+
 test("critical tool infrastructure failure stops loop without re-enqueueing degraded turns", async () => {
   const brokenCache = {
     async put() {},

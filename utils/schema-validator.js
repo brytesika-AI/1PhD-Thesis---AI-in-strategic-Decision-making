@@ -201,8 +201,11 @@ export function validateToolResult(toolName, result, schema = TOOL_OUTPUT_SCHEMA
 export async function safeTool(tool, state = {}) {
   try {
     const result = await tool(state);
-    if (!result) throw new Error("Empty result");
-    return await enforceJSON(result);
+    const parsed = await enforceJSON(result);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("Invalid tool output");
+    }
+    return parsed;
   } catch (error) {
     return {
       error: true,
