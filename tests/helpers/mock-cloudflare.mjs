@@ -7,6 +7,8 @@ export class MockD1 {
     this.proceduralMemory = new Map();
     this.organizationMemory = [];
     this.agentLearningLog = [];
+    this.outcomeFeedback = [];
+    this.globalIntelligence = [];
     this.digitalTwinStates = [];
     this.users = new Map();
   }
@@ -83,6 +85,22 @@ class MockStatement {
         results: this.db.organizationMemory
           .filter((row) => row.organization_id === organizationId && row.memory_type === memoryType)
           .sort((left, right) => Number(right.success_rate) - Number(left.success_rate) || right.updated_at.localeCompare(left.updated_at))
+      };
+    }
+    if (this.sql.includes("FROM outcome_feedback")) {
+      const [organizationId, caseType] = this.params;
+      return {
+        results: this.db.outcomeFeedback
+          .filter((row) => row.organization_id === organizationId && row.case_type === caseType)
+          .sort((left, right) => right.created_at.localeCompare(left.created_at))
+      };
+    }
+    if (this.sql.includes("FROM global_intelligence")) {
+      const [caseType] = this.params;
+      return {
+        results: this.db.globalIntelligence
+          .filter((row) => row.case_type === caseType || row.case_type === "strategic_decision")
+          .sort((left, right) => Number(right.impact_score) - Number(left.impact_score) || Number(right.confidence) - Number(left.confidence))
       };
     }
     if (this.sql.includes("SELECT DISTINCT organization_id FROM users")) {
@@ -166,6 +184,24 @@ class MockStatement {
     if (this.sql.includes("INSERT INTO agent_learning_log")) {
       const [id, agent_name, lesson, improvement, impact, organization_id, timestamp] = this.params;
       this.db.agentLearningLog.push({ id, agent_name, lesson, improvement, impact, organization_id, timestamp });
+      return { success: true };
+    }
+    if (this.sql.includes("INSERT INTO outcome_feedback")) {
+      const [id, case_id, organization_id, case_type, strategy_name, expected_score, actual_score, outcome, score_delta, lesson, created_at] = this.params;
+      this.db.outcomeFeedback.push({ id, case_id, organization_id, case_type, strategy_name, expected_score, actual_score, outcome, score_delta, lesson, created_at });
+      return { success: true };
+    }
+    if (this.sql.includes("INSERT INTO global_intelligence")) {
+      const [id, insight_type, case_type, strategy_pattern, lesson, impact_score, confidence, sample_size, source_hash, tags, created_at, updated_at] = this.params;
+      const existing = this.db.globalIntelligence.find((row) => row.id === id);
+      if (existing) {
+        existing.impact_score = Math.min(0.99, Math.max(Number(existing.impact_score || 0), Number(impact_score || 0)));
+        existing.confidence = Math.min(0.99, (Number(existing.confidence || 0) + Number(confidence || 0)) / 2);
+        existing.sample_size = Number(existing.sample_size || 1) + 1;
+        existing.updated_at = updated_at;
+      } else {
+        this.db.globalIntelligence.push({ id, insight_type, case_type, strategy_pattern, lesson, impact_score, confidence, sample_size, source_hash, tags, created_at, updated_at });
+      }
       return { success: true };
     }
     if (this.sql.includes("INSERT INTO digital_twin_state")) {

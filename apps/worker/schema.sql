@@ -149,3 +149,38 @@ ON procedural_memory(organization_id, task_type);
 
 CREATE INDEX IF NOT EXISTS idx_procedural_memory_org_quality
 ON procedural_memory(organization_id, success_rate, failure_count, last_used);
+
+CREATE TABLE IF NOT EXISTS outcome_feedback (
+    id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL,
+    organization_id TEXT NOT NULL,
+    case_type TEXT NOT NULL,
+    strategy_name TEXT NOT NULL,
+    expected_score REAL NOT NULL DEFAULT 0,
+    actual_score REAL NOT NULL DEFAULT 0,
+    outcome TEXT NOT NULL CHECK(outcome IN ('success', 'failure')),
+    score_delta REAL NOT NULL DEFAULT 0,
+    lesson TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_outcome_feedback_org_case_type
+ON outcome_feedback(organization_id, case_type, created_at);
+
+CREATE TABLE IF NOT EXISTS global_intelligence (
+    id TEXT PRIMARY KEY,
+    insight_type TEXT NOT NULL,
+    case_type TEXT NOT NULL,
+    strategy_pattern TEXT NOT NULL,
+    lesson TEXT NOT NULL,
+    impact_score REAL NOT NULL DEFAULT 0,
+    confidence REAL NOT NULL DEFAULT 0,
+    sample_size INTEGER NOT NULL DEFAULT 1,
+    source_hash TEXT NOT NULL,
+    tags TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_global_intelligence_rank
+ON global_intelligence(case_type, impact_score, confidence, sample_size, updated_at);

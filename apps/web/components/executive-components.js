@@ -34,6 +34,23 @@ function numberPercent(value, fallback = "Pending") {
   return `${Math.round(number * 100)}%`;
 }
 
+function confidenceLabel(value, fallback = "Pending") {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return fallback;
+  if (number <= 1) return numberPercent(number, fallback);
+  return `${Math.round(number)} / 100`;
+}
+
+function strategyTitle(strategy, fallback = "Complete the decision cycle before committing capital or operating changes.") {
+  if (!strategy) return fallback;
+  if (typeof strategy === "string") return strategy;
+  return strategy.name || strategy.description || fallback;
+}
+
+function outcomeFrom(state = {}) {
+  return state.outcome || state.decision?.outcome || null;
+}
+
 function riskLevelFrom(state = {}) {
   const level = state.simulation?.block_execution
     ? "HIGH"
@@ -76,8 +93,10 @@ function decisionFrom(state = {}) {
 
 function buildExecutiveVerdict(state = {}) {
   const gate = latestApprovalGate(state);
+  const outcome = outcomeFrom(state);
   const strategy = textFrom(
-    state.decision?.recommended_strategy
+    strategyTitle(outcome?.recommended_strategy, "")
+      || strategyTitle(state.decision?.recommended_strategy, "")
       || state.narrative?.recommended_action
       || state.recommended_strategy
       || state.blended_analysis?.recommended_strategy,
@@ -86,7 +105,7 @@ function buildExecutiveVerdict(state = {}) {
   const executive_verdict = {
     decision: decisionFrom(state),
     strategy,
-    confidence: Number(confidenceFrom(state).toFixed(2)),
+    confidence: Number((outcome?.confidence ?? confidenceFrom(state)).toFixed ? (outcome?.confidence ?? confidenceFrom(state)).toFixed(2) : outcome?.confidence ?? confidenceFrom(state)),
     risk_level: riskLevelFrom(state),
     approval_required: true,
     approval_status: approvalStatusFrom(state),
@@ -129,65 +148,68 @@ function listItems(items, fallback) {
 
 function renderExecutiveVerdict(state = {}) {
   const verdict = buildExecutiveVerdict(state);
+  const outcome = outcomeFrom(state);
+  const alternatives = asArray(outcome?.ranked_strategies).slice(1, 3).map((item) => strategyTitle(item.strategy, ""));
   state.executive_verdict = verdict;
   el("executiveVerdict").innerHTML = `
     <div class="verdict-card">
-      <h2>Executive Verdict</h2>
+      <h2>Best Validated Strategy</h2>
       <div class="verdict-action">${safeHtml(verdict.decision)}</div>
       <div class="card-note">${safeHtml(verdict.strategy)}</div>
     </div>
     <div class="verdict-card">
-      <h2>Risk</h2>
-      <div class="metric-value">${safeHtml(verdict.risk_level)}</div>
-      <div class="card-note">Current board-level exposure.</div>
+      <h2>Why</h2>
+      <div class="card-note">${safeHtml(outcome?.validation_summary || state.decision?.rationale || "Validation summary will appear after the outcome engine runs.")}</div>
     </div>
     <div class="verdict-card">
       <h2>Confidence</h2>
-      <div class="metric-value">${numberPercent(verdict.confidence)}</div>
-      <div class="card-note">Based on evidence, consensus, memory, and simulation.</div>
+      <div class="metric-value">${confidenceLabel(verdict.confidence)}</div>
+      <div class="card-note">Outcome-engine confidence in the validated decision.</div>
     </div>
     <div class="verdict-card">
-      <h2>Approval</h2>
-      <span class="status-pill ${verdict.approval_status.toLowerCase()}">${safeHtml(verdict.approval_status)}</span>
-      <div class="card-note">Executive approval is required before closure.</div>
+      <h2>Alternatives</h2>
+      ${listItems(alternatives, "Top alternatives will appear after at least three strategies are validated.")}
     </div>
     <div class="verdict-card">
-      <h2>Owner</h2>
-      <div class="metric-value" style="font-size: 22px;">${safeHtml(verdict.owner)}</div>
-      <div class="card-note">Accountable decision authority.</div>
+      <h2>System Learning Insight</h2>
+      <div class="card-note">${safeHtml(outcome?.system_learning_insight || state.system_learning_insight || "Outcome feedback has not produced a private learning signal yet.")}</div>
+    </div>
+    <div class="verdict-card">
+      <h2>Global Intelligence Insight</h2>
+      <div class="card-note">${safeHtml(outcome?.global_intelligence_insight || state.global_intelligence_insight || "No anonymized cross-organization insight has influenced this decision yet.")}</div>
     </div>
   `;
 }
 
 function renderStrategicNarrative(state = {}) {
-  const summary = textFrom(state.narrative?.executive_summary || state.decision?.rationale || state.consensus?.final_rationale, "Run decision preparation to generate a board-ready narrative.");
-  const narrative = textFrom(state.narrative?.strategic_narrative, "The narrative will explain the situation, complication, recommended action, and operating guardrails once the decision cycle completes.");
+  const outcome = outcomeFrom(state);
+  const summary = textFrom(outcome?.validation_summary || state.decision?.rationale || state.narrative?.executive_summary, "Run decision preparation to generate a validated strategic recommendation.");
+  const narrative = textFrom(strategyTitle(outcome?.recommended_strategy, "") || state.narrative?.strategic_narrative, "The outcome engine will return the best validated decision once the full loop completes.");
   el("strategicNarrative").innerHTML = `
-    <h2>Strategic Narrative</h2>
+    <h2>Validated Decision</h2>
     <div class="summary-line">${safeHtml(summary)}</div>
     <div class="narrative-text">${safeHtml(narrative)}</div>
   `;
 }
 
 function renderDecisionOptions(state = {}) {
-  const preferred = state.executive_verdict?.strategy || textFrom(state.blended_analysis?.recommended_strategy);
-  const options = asArray(state.options || state.options_generated).slice(0, 3);
-  const tradeoffs = state.blended_analysis?.key_tradeoffs || state.narrative?.tradeoffs || [];
-  const avoid = asArray(state.objections || state.devil_advocate_findings?.objections).slice(0, 3);
+  const outcome = outcomeFrom(state);
+  const preferred = strategyTitle(outcome?.recommended_strategy, state.executive_verdict?.strategy || textFrom(state.blended_analysis?.recommended_strategy));
+  const options = asArray(outcome?.ranked_strategies).slice(1, 3).map((item) => item.strategy).filter(Boolean);
   el("decisionOptions").innerHTML = `
-    <h2>Decision Options</h2>
+    <h2>Outcome Engine</h2>
     <div class="grid-3">
       <article class="plain-card">
-        <strong>Recommended Path</strong>
+        <strong>Best Validated Strategy</strong>
         <p>${safeHtml(preferred || "No recommended path has been prepared yet.")}</p>
       </article>
       <article class="plain-card">
-        <strong>Alternatives Considered</strong>
-        ${listItems(options.map((option) => option.name || option.description || option), "Alternatives will appear after option generation.")}
+        <strong>Alternatives</strong>
+        ${listItems(options.map((option) => option.name || option.description || option), "Alternatives will appear after validation.")}
       </article>
       <article class="plain-card">
-        <strong>Trade-offs</strong>
-        ${listItems(tradeoffs.length ? tradeoffs : avoid, "Trade-offs will appear once the decision has been challenged.")}
+        <strong>Decision Ownership</strong>
+        <p>${safeHtml("The system has selected the validated decision, learned from prior outcomes, and applied anonymized global intelligence where available.")}</p>
       </article>
     </div>
   `;
@@ -195,21 +217,19 @@ function renderDecisionOptions(state = {}) {
 
 function renderRiskSimulation(state = {}) {
   const twin = state.digital_twin || {};
-  const simulation = state.simulation || {};
-  const scenarios = asArray(simulation.simulation_summary);
-  const best = textFrom(simulation.best_strategy || state.executive_verdict?.strategy, "Simulation has not selected a path yet.");
-  const riskScore = Number.isFinite(Number(simulation.highest_risk_score)) ? simulation.highest_risk_score : twin.risk_state?.score;
+  const outcome = outcomeFrom(state);
+  const best = strategyTitle(outcome?.recommended_strategy, state.executive_verdict?.strategy || "Simulation has not selected a path yet.");
   el("riskSimulation").innerHTML = `
     <h2>Simulation + Digital Twin</h2>
     <div class="risk-band">
       <article class="plain-card">
-        <strong>Simulation Result</strong>
+        <strong>Validated Result</strong>
         <p>${safeHtml(best)}</p>
-        <p style="margin-top: 10px;">${safeHtml(scenarios.length ? `${scenarios.length} scenarios tested. Highest risk score: ${riskScore ?? "pending"}.` : "Run simulation to compare likely outcomes before execution.")}</p>
+        <p style="margin-top: 10px;">${safeHtml(outcome ? `${outcome.strategies_tested} strategies generated, simulated, validated, scored, and ranked.` : "Run the decision cycle to generate, simulate, validate, score, and rank strategies.")}</p>
       </article>
       <article class="plain-card">
         <strong>Current Operating State</strong>
-        <p>${safeHtml(`Risk is ${riskLevelFrom(state)}${riskScore !== undefined ? ` with score ${riskScore}` : ""}.`)}</p>
+        <p>${safeHtml(`Risk is ${riskLevelFrom(state)}.`)}</p>
         <p style="margin-top: 10px;">${safeHtml(twin.last_updated ? `Last updated ${twin.last_updated}.` : "Digital twin state has not been loaded yet.")}</p>
       </article>
     </div>
@@ -252,32 +272,13 @@ function renderGovernanceControls(state = {}) {
 
 function renderTechnicalDrawer(state = {}) {
   if (!technicalLoaded) return;
-  const technicalState = {
-    case_id: state.case_id,
-    status: state.status,
-    current_stage: state.current_stage,
-    loop: state.loop,
-    verification_chain: state.verification_chain,
-    approval_gates: state.approval_gates,
-    policy_violations: state.policy_violations,
-    system_errors: state.system_errors,
-    audit_refs: state.audit_refs || state.audit_log_refs,
-    audit_events: asArray(state.audit_events).slice(-40)
-  };
-  const payloads = [
-    ["Executive Verdict Mapping", state.executive_verdict || buildExecutiveVerdict(state)],
-    ["Decision State", technicalState],
-    ["Evidence", state.evidence_bundle || {}],
-    ["Framework Selection", state.framework_selection || {}],
-    ["Simulation", state.simulation || {}],
-    ["Memory", state.shared_memory || state.memory || {}]
-  ];
-  el("technicalDetails").innerHTML = payloads.map(([title, payload]) => `
+  const outcome = outcomeFrom(state);
+  el("technicalDetails").innerHTML = `
     <article>
-      <h2>${safeHtml(title)}</h2>
-      <pre>${safeHtml(JSON.stringify(payload, null, 2))}</pre>
+      <h2>Outcome Engine Status</h2>
+      <p>${safeHtml(outcome ? "The decision has been generated, simulated, validated, scored, and ranked." : "Outcome validation has not completed yet.")}</p>
     </article>
-  `).join("");
+  `;
 }
 
 function renderState(state = {}) {

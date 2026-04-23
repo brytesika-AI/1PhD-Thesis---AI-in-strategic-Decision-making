@@ -131,6 +131,42 @@ function compareSimulations(simulationSummary = []) {
   };
 }
 
+function average(values = []) {
+  const usable = values.map(Number).filter((value) => Number.isFinite(value));
+  if (!usable.length) return 0;
+  return usable.reduce((total, value) => total + value, 0) / usable.length;
+}
+
+function estimateCostScore(strategy = {}, simulationSummary = []) {
+  const text = `${strategy.name || ""} ${strategy.description || ""} ${strategy.approach || ""} ${strategy.risk || ""}`.toLowerCase();
+  const base = text.includes("pilot") || text.includes("focused") || text.includes("constrained") ? 0.35 : 0.55;
+  const riskLift = average(simulationSummary.map((item) => item.outcome?.risk_score)) * 0.2;
+  return Number(clamp(base + riskLift).toFixed(2));
+}
+
+function structuredStrategySimulation(state = {}, simulationSummary = [], compared = {}) {
+  const proposed = state.proposed_strategy || {};
+  const successProbability = average(simulationSummary.map((item) => item.outcome?.success_probability));
+  const riskScore = average(simulationSummary.map((item) => item.outcome?.risk_score));
+  const resilienceScore = average(simulationSummary.map((item) => item.outcome?.resilience ?? item.outcome?.resilience_score));
+  const recommendation = riskScore >= 0.72
+    ? "reject"
+    : riskScore >= 0.55
+      ? "modify"
+      : "proceed";
+  return {
+    success_probability: Number(clamp(successProbability).toFixed(2)),
+    risk_score: Number(clamp(riskScore).toFixed(2)),
+    cost_score: estimateCostScore(proposed, simulationSummary),
+    resilience_score: Number(clamp(resilienceScore).toFixed(2)),
+    recommendation,
+    strategy_name: strategyName(proposed),
+    justification: compared.justification || `Simulated ${strategyName(proposed)} across ${simulationSummary.length} scenarios.`,
+    scenarios_tested: simulationSummary.length,
+    generated_at: new Date().toISOString()
+  };
+}
+
 async function persistSimulationMemory(state = {}, simulationResult = {}, env = {}) {
   if (!env.DB) return null;
   const organizationId = state.organization_id || state.user?.organization_id;
@@ -254,6 +290,9 @@ export async function runSimulation(state = {}, env = {}) {
   }
 
   const compared = compareSimulations(simulationSummary);
+  if (state.proposed_strategy) {
+    return structuredStrategySimulation(state, simulationSummary, compared);
+  }
   const threshold = Number(env.SIMULATION_RISK_THRESHOLD || state.simulation_risk_threshold || 0.72);
   const highestRisk = Math.max(...simulationSummary.map((item) => Number(item.outcome?.risk_score || 0)), 0);
   const result = {

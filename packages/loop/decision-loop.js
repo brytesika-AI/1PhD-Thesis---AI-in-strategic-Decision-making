@@ -32,7 +32,9 @@ const REQUIRED_D1_TABLES = [
   "audit_events",
   "digital_twin_state",
   "organization_memory",
-  "agent_learning_log"
+  "agent_learning_log",
+  "outcome_feedback",
+  "global_intelligence"
 ];
 const AGENT_TOOL_MAP = {
   tracker: "gather_evidence",
@@ -872,47 +874,72 @@ export class DecisionLoop {
   }
 
   async runSimulationBeforeDecision({ caseState, queues, userGoal, user }) {
-    if (caseState.simulation?.generated_at || !this.simulation?.runSimulation) return null;
+    if (caseState.outcome?.recommended_strategy || caseState.simulation?.generated_at || (!this.simulation?.runSimulation && !this.simulation?.runOutcomeEngine)) return null;
     if (!queues.isEmpty()) return null;
     const preDecision = this.consensus.confirmBeforeDecision(caseState);
     const consensusLevel = CONSENSUS_RANK[caseState.consensus?.level || "unknown"] || 0;
     const hasUnresolvedTensions = (caseState.consensus?.unresolved_tensions || []).length > 0 || (caseState.unresolved_tensions || []).length > 0;
     if (!preDecision.allowed || consensusLevel < CONSENSUS_RANK.medium || hasUnresolvedTensions) return null;
 
-    traceStep("simulation.start", caseState, { user_goal: userGoal });
+    traceStep("outcome_engine.start", caseState, { user_goal: userGoal });
     let simulationResult;
     try {
-      simulationResult = await this.simulation.runSimulation({
+      const outcomeInput = {
         ...cloneJSON(caseState, {}),
+        case_description: userGoal || caseState.case_description || caseState.user_goal,
         user_goal: userGoal || caseState.user_goal,
         user,
         simulation_isolated: true
-      });
+      };
+      if (this.simulation.runOutcomeEngine) {
+        const outcome = await this.simulation.runOutcomeEngine(outcomeInput);
+        caseState.outcome = outcome;
+        caseState.system_learning_insight = outcome.system_learning_insight;
+        caseState.global_intelligence_insight = outcome.global_intelligence_insight;
+        caseState.proposed_strategy = outcome.recommended_strategy;
+        caseState.recommended_strategy = outcome.recommended_strategy;
+        simulationResult = {
+          best_strategy: outcome.recommended_strategy?.name || "No validated strategy",
+          alternatives: (outcome.ranked_strategies || []).slice(1, 3).map((item) => ({
+            strategy: item.strategy?.name,
+            recommendation: item.simulation?.recommendation,
+            justification: item.evaluation?.justification
+          })),
+          justification: outcome.validation_summary,
+          simulation_summary: outcome.ranked_strategies || [],
+          highest_risk_score: Math.max(...(outcome.ranked_strategies || []).map((item) => Number(item.simulation?.risk_score || 0)), 0),
+          block_execution: (outcome.ranked_strategies?.[0]?.simulation?.recommendation || "").toLowerCase() === "reject",
+          approval_required: false,
+          generated_at: new Date().toISOString()
+        };
+      } else {
+        simulationResult = await this.simulation.runSimulation(outcomeInput);
+      }
     } catch (error) {
-      traceStep("simulation.error", caseState, { error: error.message });
+      traceStep("outcome_engine.error", caseState, { error: error.message });
       await this.events.emit("system_error", {
         case_id: caseState.case_id,
-        agent_id: "simulation_engine",
-        input_summary: "Simulation failed in isolated mode.",
+        agent_id: "outcome_engine",
+        input_summary: "Outcome engine failed in isolated mode.",
         output_summary: error.message,
         raw_payload: {
-          error_category: "simulation_unavailable",
+          error_category: "outcome_engine_unavailable",
           is_retriable: true,
           message: error.message,
-          customer_message: "Simulation was unavailable, so the decision loop continued with governance controls.",
-          suggestion: "Retry simulation before execution or require human approval for high-risk execution."
+          customer_message: "Outcome validation was unavailable, so the decision loop continued with governance controls.",
+          suggestion: "Retry outcome validation before execution or require human approval for high-risk execution."
         }
       });
       return null;
     }
     caseState.simulation = simulationResult;
-    if (simulationResult.best_strategy) {
+    if (simulationResult.best_strategy && !caseState.outcome) {
       caseState.recommended_strategy = simulationResult.best_strategy;
     }
     await this.events.emit("simulation_completed", {
       case_id: caseState.case_id,
-      agent_id: "simulation_engine",
-      input_summary: "Simulation completed before final decision.",
+      agent_id: caseState.outcome ? "outcome_engine" : "simulation_engine",
+      input_summary: caseState.outcome ? "Outcome engine selected the best validated decision." : "Simulation completed before final decision.",
       output_summary: simulationResult.justification,
       raw_payload: simulationResult
     });
@@ -940,7 +967,7 @@ export class DecisionLoop {
         ];
       }
     }
-    traceStep("simulation.end", caseState, simulationResult);
+    traceStep("outcome_engine.end", caseState, caseState.outcome || simulationResult);
     return simulationResult;
   }
 
@@ -1580,11 +1607,13 @@ export class DecisionLoop {
     ) {
       caseState.decision = {
         status: "ready_for_human_approval",
-        rationale: caseState.simulation?.best_strategy
+        rationale: caseState.outcome?.validation_summary
+          || (caseState.simulation?.best_strategy
           ? `${caseState.consensus.final_rationale} Simulation selected: ${caseState.simulation.best_strategy}.`
-          : caseState.consensus.final_rationale,
-        recommended_strategy: caseState.simulation?.best_strategy || caseState.recommended_strategy || null,
+          : caseState.consensus.final_rationale),
+        recommended_strategy: caseState.outcome?.recommended_strategy || caseState.simulation?.best_strategy || caseState.recommended_strategy || null,
         implementation_plan: caseState.implementation_plan,
+        outcome: caseState.outcome || null,
         simulation: caseState.simulation || null,
         organizational_intelligence: caseState.organizational_intelligence || buildOrganizationalIntelligence(caseState.shared_memory || caseState.memory || {})
       };

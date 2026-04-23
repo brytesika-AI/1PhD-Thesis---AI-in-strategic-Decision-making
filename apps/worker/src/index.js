@@ -1,8 +1,10 @@
 import { D1AuditLog } from "../../../packages/audit/d1-audit-log.js";
 import { OrchestrationGateway } from "../../../packages/core/orchestration-gateway.js";
 import { getLatestTwinState, updateDigitalTwin, updateTwinWithDecisionOutcome } from "../../../packages/digital-twin/digital-twin-engine.js";
+import { recordOutcomeFeedback } from "../../../packages/learning/outcome-learning-loop.js";
 import { DecisionLoop } from "../../../packages/loop/decision-loop.js";
 import { D1MemoryStore } from "../../../packages/memory/d1-memory-store.js";
+import { runOutcomeEngine } from "../../../packages/outcome/outcome-engine.js";
 import { PolicyEngine } from "../../../packages/policy/policy-engine.js";
 import { runSimulation } from "../../../packages/simulation/simulation-engine.js";
 import { createResourceGuard, isResourceLimitError } from "../../../packages/runtime/resource-guard.js";
@@ -230,6 +232,7 @@ function gateway(env) {
       updateDecisionOutcome: ({ organizationId, caseState, outcome }) => updateTwinWithDecisionOutcome(env, { organizationId, caseState, outcome })
     },
     simulation: {
+      runOutcomeEngine: (state) => runOutcomeEngine(state, env),
       runSimulation: (state) => runSimulation(state, env)
     }
   });
@@ -252,6 +255,7 @@ function decisionLoop(env, ctx = null) {
       updateDecisionOutcome: ({ organizationId, caseState, outcome }) => updateTwinWithDecisionOutcome(env, { organizationId, caseState, outcome })
     },
     simulation: {
+      runOutcomeEngine: (state) => runOutcomeEngine(state, env),
       runSimulation: (state) => runSimulation(state, env)
     }
   });
@@ -583,6 +587,42 @@ export default {
           return eventStreamResponse(request, events);
         }
         return jsonResponse(request, { case_id: caseId, events });
+      }
+
+      const outcomeFeedbackMatch = url.pathname.match(/^\/api\/cases\/([^/]+)\/outcome$/);
+      if (outcomeFeedbackMatch && request.method === "POST") {
+        const authz = requireRole(user, ["analyst", "executive", "admin"]);
+        if (!authz.allowed) return jsonResponse(request, { error: authz.error }, authz.status);
+        const caseId = decodeURIComponent(outcomeFeedbackMatch[1]);
+        const body = await readJson(request);
+        const store = new D1CaseStore(env.DB);
+        const caseState = await store.getCase(caseId, { organizationId: user.organization_id });
+        if (!caseState) return jsonResponse(request, { error: "Case not found." }, 404);
+        const learning = await recordOutcomeFeedback({
+          caseState,
+          actualOutcome: body,
+          env,
+          user
+        });
+        caseState.real_world_outcome = {
+          outcome: body.outcome || (learning.expectation_met ? "success" : "failure"),
+          actual_score: Number(body.actual_score || body.score || 0),
+          recorded_at: learning.recorded_at
+        };
+        caseState.system_learning_insight = learning.system_learning_insight;
+        caseState.global_intelligence_insight = learning.global_intelligence_published
+          ? "An anonymized cross-organization insight was published for future decisions."
+          : caseState.global_intelligence_insight;
+        await store.saveCase(caseState);
+        await logCommand({
+          env,
+          caseId,
+          user,
+          action: "real_world_outcome_recorded",
+          outputSummary: learning.lesson,
+          rawPayload: { expectation_met: learning.expectation_met, score_delta: learning.score_delta }
+        });
+        return jsonResponse(request, { case_id: caseId, learning, case_state: caseState });
       }
 
       const approvalMatch = url.pathname.match(/^\/api\/cases\/([^/]+)\/approvals\/([^/]+)$/);
