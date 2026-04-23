@@ -89,7 +89,7 @@ export const agentRegistry = {
       display_name: "Decision Governor",
       role: "Orchestration and Control",
       system_prompt_path: "prompts/decision_governor.md",
-      allowed_tools: ["validate_policy", "validate_consensus", "extract_memory", "reflect_on_decision", "extract_learning", "generate_scenarios", "evaluate_outcome"],
+      allowed_tools: ["manage_memory", "generate_scenarios", "evaluate_outcome"],
       output_schema: "DecisionGovernorSchema",
       handoff_rules: { next: null },
       requires_human_approval: false,

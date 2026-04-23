@@ -4,6 +4,16 @@ const QUEUE_KEYS = {
   debate: "debate"
 };
 
+function idempotencyKey(item = {}) {
+  return item.idempotency_key || [
+    item.type || "action",
+    item.agent_id || "none",
+    item.stage || "none",
+    item.reason || "none",
+    item.source_agent_id || "none"
+  ].join(":");
+}
+
 export class DecisionQueues {
   constructor(snapshot = {}) {
     this.steering = [...(snapshot.steering || [])];
@@ -16,8 +26,13 @@ export class DecisionQueues {
     if (!this[key]) {
       throw new Error(`Unknown decision queue: ${queueName}`);
     }
+    const actionKey = idempotencyKey(item);
+    const existing = [...this.steering, ...this.follow_up, ...this.debate]
+      .find((queued) => idempotencyKey(queued) === actionKey);
+    if (existing) return existing;
     const queued = {
       id: item.id || crypto.randomUUID(),
+      idempotency_key: actionKey,
       created_at: item.created_at || new Date().toISOString(),
       ...item
     };

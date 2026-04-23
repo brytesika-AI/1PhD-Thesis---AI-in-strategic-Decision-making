@@ -59,7 +59,7 @@ ${String(current)}
 
 export const TOOL_OUTPUT_SCHEMAS = {
   gather_evidence: {
-    required: { evidence: "object", confidence: "number" },
+    required: { evidence: "array", confidence: "number" },
     optional: { signals: "array", finding: "string" }
   },
   extract_assumptions: {
@@ -100,6 +100,9 @@ export const TOOL_OUTPUT_SCHEMAS = {
   },
   extract_learning: {
     required: { lessons: "array", improvements: "array", strategy_updates: "array", agent_learning: "object", confidence: "number" }
+  },
+  manage_memory: {
+    required: { memory: "object", reflection: "object", learning: "object", confidence: "number" }
   },
   generate_scenarios: {
     required: { scenarios: "array", confidence: "number" }

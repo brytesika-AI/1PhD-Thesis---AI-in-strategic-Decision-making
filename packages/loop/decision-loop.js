@@ -42,7 +42,10 @@ const FRAMEWORK_STATE_MAP = {
 
 const AGENT_OUTPUT_CONTRACTS = {
   tracker: {
-    required: [{ key: "confidence", type: "number" }],
+    required: [
+      { key: "evidence", type: "array", nonEmpty: true },
+      { key: "confidence", type: "number" }
+    ],
     optionalArrays: ["signals"]
   },
   induna: {
@@ -152,6 +155,12 @@ function mergeObjects(existing = {}, incoming = {}) {
 function stripPolicyMetadata(output = {}) {
   const { policy_check, after_policy_check, tools_used, ...rest } = output || {};
   return rest;
+}
+
+function circuitOpen(caseState = {}, toolName) {
+  const breaker = caseState.circuit_breakers?.[toolName];
+  if (!breaker?.open_until) return false;
+  return Date.parse(breaker.open_until) > Date.now();
 }
 
 function objectIsNonEmpty(value) {
@@ -333,7 +342,8 @@ export class DecisionLoop {
         iterations: Number(caseState.loop?.iterations || 0) + 1,
         max_iterations: maxIterations,
         last_agent_id: action.agent_id,
-        risk_state: riskState
+        risk_state: riskState,
+        progress_signature: this.progressSignature(caseState, queues)
       };
 
       if (caseState.simulation_mode_enabled) {
@@ -344,6 +354,12 @@ export class DecisionLoop {
       traceStep("decision_loop.stop_check", caseState, stopCheck);
       if (stopCheck.stop) {
         stopReason = stopCheck.reason;
+        break;
+      }
+      if (this.detectLoopStall(caseState, queues)) {
+        stopReason = "loop_stalled";
+        caseState.status = "escalation_required";
+        traceStep("decision_loop.stall_detected", caseState, { stop_reason: stopReason });
         break;
       }
     }
@@ -402,12 +418,35 @@ export class DecisionLoop {
     return queued;
   }
 
+  progressSignature(caseState, queues) {
+    return JSON.stringify({
+      stage: caseState.current_stage,
+      status: caseState.status,
+      queues: queues.snapshot(),
+      verification_chain: caseState.verification_chain,
+      output_agents: Object.keys(caseState.stage_outputs || {}).sort(),
+      consensus_level: caseState.consensus?.level || "unknown"
+    });
+  }
+
+  detectLoopStall(caseState, queues) {
+    const signature = this.progressSignature(caseState, queues);
+    const lastSignature = caseState.loop?.last_progress_signature;
+    const stallCount = signature === lastSignature ? Number(caseState.loop?.stall_count || 0) + 1 : 0;
+    caseState.loop = {
+      ...(caseState.loop || {}),
+      last_progress_signature: signature,
+      stall_count: stallCount
+    };
+    return stallCount >= 2;
+  }
+
   async validateSystem({ caseId }) {
     traceStep("validate_system.start", { case_id: caseId }, { required_tables: REQUIRED_D1_TABLES });
     try {
       if (this.cache?.put) {
-        const key = `case:${caseId || "healthcheck"}:system`;
-        const safeKey = new TextEncoder().encode(key).length < 512 ? key : `case:${crypto.randomUUID()}:system`;
+        const key = `case:${caseId || "healthcheck"}`;
+        const safeKey = new TextEncoder().encode(key).length < 512 ? key : `case:${crypto.randomUUID()}`;
         await this.cache.put(safeKey, JSON.stringify({ ok: true }), { expirationTtl: 60 });
         traceStep("validate_system.kv", { case_id: caseId, key: safeKey }, { ok: true, key_bytes: new TextEncoder().encode(safeKey).length });
       }
@@ -535,30 +574,18 @@ export class DecisionLoop {
         llm: this.ai,
         cache: this.cache
       };
-      const memory = await executeToolWithHooks({
+      const managed = await executeToolWithHooks({
         agentId: "decision_governor",
-        toolName: "extract_memory",
+        toolName: "manage_memory",
         input,
         policy: this.policy,
         eventBus: this.events,
         caseId: caseState.case_id
       });
-      const reflection = await executeToolWithHooks({
-        agentId: "decision_governor",
-        toolName: "reflect_on_decision",
-        input,
-        policy: this.policy,
-        eventBus: this.events,
-        caseId: caseState.case_id
-      });
-      const learning = await executeToolWithHooks({
-        agentId: "decision_governor",
-        toolName: "extract_learning",
-        input,
-        policy: this.policy,
-        eventBus: this.events,
-        caseId: caseState.case_id
-      });
+      const memory = managed.memory || {};
+      const reflection = managed.reflection || {};
+      const learning = managed.learning || {};
+      validateToolOutput(managed);
       validateToolOutput(memory);
       validateToolOutput(reflection);
       validateToolOutput(learning);
@@ -855,6 +882,44 @@ export class DecisionLoop {
     return { agent_id: agent.id, output, case_state: caseState };
   }
 
+  toolInput({ caseState, userGoal, riskState, sector }) {
+    return {
+      text: userGoal,
+      context: {
+        ...caseState,
+        memory: caseState.shared_memory || caseState.memory || {},
+        shared_memory: caseState.shared_memory || caseState.memory || {},
+        frameworks: caseState.frameworks || {},
+        analysis: caseState.analysis || {},
+        digital_twin: caseState.digital_twin || null,
+        risk_state: riskState,
+        sector
+      },
+      llm: this.ai,
+      cache: this.cache
+    };
+  }
+
+  recordToolSuccess(caseState, toolName) {
+    if (!toolName) return;
+    caseState.circuit_breakers = { ...(caseState.circuit_breakers || {}) };
+    delete caseState.circuit_breakers[toolName];
+  }
+
+  recordToolFailure(caseState, toolName, error) {
+    if (!toolName) return;
+    const previous = caseState.circuit_breakers?.[toolName] || {};
+    const failures = Number(previous.failures || 0) + 1;
+    caseState.circuit_breakers = {
+      ...(caseState.circuit_breakers || {}),
+      [toolName]: {
+        failures,
+        last_error: error.message,
+        open_until: failures >= 2 ? new Date(Date.now() + 60000).toISOString() : null
+      }
+    };
+  }
+
   async executeAgentTool({ agent, caseState, userGoal, riskState, sector }) {
     const toolName = AGENT_TOOL_MAP[agent.id] || agent.allowed_tools?.[0];
     if (!toolName) {
@@ -867,6 +932,9 @@ export class DecisionLoop {
           agent_id: agent.id
         }
       };
+    }
+    if (circuitOpen(caseState, toolName)) {
+      throw new Error(`CRITICAL TOOL FAILURE: Circuit breaker open for ${toolName}.`);
     }
 
     let frameworkResults = {};
@@ -881,21 +949,7 @@ export class DecisionLoop {
       const result = await executeToolWithHooks({
         agentId: agent.id,
         toolName,
-        input: {
-          text: userGoal,
-          context: {
-            ...caseState,
-            memory: caseState.shared_memory || caseState.memory || {},
-            shared_memory: caseState.shared_memory || caseState.memory || {},
-            frameworks: caseState.frameworks || {},
-            analysis: caseState.analysis || {},
-            digital_twin: caseState.digital_twin || null,
-            risk_state: riskState,
-            sector
-          },
-          llm: this.ai,
-          cache: this.cache
-        },
+        input: this.toolInput({ caseState, userGoal, riskState, sector }),
         policy: this.policy,
         eventBus: this.events,
         caseId: caseState.case_id
@@ -908,6 +962,7 @@ export class DecisionLoop {
       if (!validation.valid) {
         throw new Error(validation.reason);
       }
+      this.recordToolSuccess(caseState, toolName);
       traceStep("tool.execution.end", caseState, { agent_id: agent.id, tool_name: toolName, result });
       return {
         toolName,
@@ -919,6 +974,7 @@ export class DecisionLoop {
         }
       };
     } catch (error) {
+      this.recordToolFailure(caseState, toolName, error);
       traceStep("tool.execution.error", caseState, { agent_id: agent.id, tool_name: toolName, error: error.message });
       throw new Error(`CRITICAL TOOL FAILURE: Tool ${toolName} failed: ${error.message}`);
     }
@@ -927,37 +983,46 @@ export class DecisionLoop {
   async executeFrameworkTools({ agent, caseState, userGoal, riskState, sector }) {
     const frameworkTools = this.frameworkToolsForAgent(caseState, agent.id);
     const results = {};
-    for (const frameworkTool of frameworkTools) {
-      traceStep("framework_tool.execution.start", caseState, { agent_id: agent.id, tool_name: frameworkTool });
-      const result = await executeToolWithHooks({
-        agentId: agent.id,
-        toolName: frameworkTool,
-        input: {
-          text: userGoal,
-          context: {
-            ...caseState,
-            memory: caseState.shared_memory || caseState.memory || {},
-            shared_memory: caseState.shared_memory || caseState.memory || {},
-            frameworks: caseState.frameworks || {},
-            analysis: caseState.analysis || {},
-            digital_twin: caseState.digital_twin || null,
-            risk_state: riskState,
-            sector
-          },
-          llm: this.ai,
-          cache: this.cache
-        },
-        policy: this.policy,
-        eventBus: this.events,
-        caseId: caseState.case_id
-      });
-      if (result?.status === "blocked" || result?.status === "error" || result?.error) {
-        throw new Error(result.message || `Framework tool ${frameworkTool} failed or was blocked.`);
+    const executions = frameworkTools.map(async (frameworkTool) => {
+      if (circuitOpen(caseState, frameworkTool)) {
+        return { frameworkTool, skipped: true, reason: `Circuit breaker open for ${frameworkTool}.` };
       }
-      validateToolOutput(result);
-      this.mergeFrameworkOutput(caseState, frameworkTool, result);
-      results[frameworkTool] = { ...result };
-      traceStep("framework_tool.execution.end", caseState, { agent_id: agent.id, tool_name: frameworkTool, result });
+      traceStep("framework_tool.execution.start", caseState, { agent_id: agent.id, tool_name: frameworkTool });
+      try {
+        const result = await executeToolWithHooks({
+          agentId: agent.id,
+          toolName: frameworkTool,
+          input: this.toolInput({ caseState, userGoal, riskState, sector }),
+          policy: this.policy,
+          eventBus: this.events,
+          caseId: caseState.case_id
+        });
+        if (result?.status === "blocked" || result?.status === "error" || result?.error) {
+          throw new Error(result.message || `Framework tool ${frameworkTool} failed or was blocked.`);
+        }
+        validateToolOutput(result);
+        this.recordToolSuccess(caseState, frameworkTool);
+        traceStep("framework_tool.execution.end", caseState, { agent_id: agent.id, tool_name: frameworkTool, result });
+        return { frameworkTool, result };
+      } catch (error) {
+        this.recordToolFailure(caseState, frameworkTool, error);
+        traceStep("framework_tool.execution.error", caseState, { agent_id: agent.id, tool_name: frameworkTool, error: error.message });
+        await this.events.emit("system_error", {
+          case_id: caseState.case_id,
+          agent_id: agent.id,
+          input_summary: `Framework tool failed: ${frameworkTool}`,
+          output_summary: error.message,
+          tools_used: [frameworkTool],
+          raw_payload: { tool: frameworkTool, error: error.message }
+        });
+        return { frameworkTool, error };
+      }
+    });
+    const settled = await Promise.all(executions);
+    for (const item of settled) {
+      if (!item?.result) continue;
+      this.mergeFrameworkOutput(caseState, item.frameworkTool, item.result);
+      results[item.frameworkTool] = { ...item.result };
     }
     return results;
   }
@@ -1070,8 +1135,9 @@ export class DecisionLoop {
 
     if (agentId === "tracker") {
       const signals = appendUnique(caseState.evidence_bundle?.signals || [], asArray(output.signals));
+      const evidence = appendUnique(caseState.evidence_bundle?.evidence || [], asArray(output.evidence));
       caseState.situational_briefing = output.situational_briefing || { verdict: output.verdict || output.finding || "", signals };
-      caseState.evidence_bundle = { ...(caseState.evidence_bundle || {}), signals };
+      caseState.evidence_bundle = { ...(caseState.evidence_bundle || {}), signals, evidence };
     } else if (agentId === "induna") {
       caseState.assumptions = appendUnique(caseState.assumptions || [], output.assumptions || []);
     } else if (agentId === "auditor") {
@@ -1237,13 +1303,13 @@ export class DecisionLoop {
     }
     if (queues.isEmpty() && Number(caseState.current_stage || 1) > 6 && consensusLevel < CONSENSUS_RANK.medium) {
       caseState.loop.reevaluation_count = Number(caseState.loop?.reevaluation_count || 0) + 1;
-      if (caseState.loop.reevaluation_count <= 3) {
-        return { stop: false, reason: "weak_consensus_re_evaluate" };
-      }
       caseState.status = "escalation_required";
-      return { stop: true, reason: "escalation_required" };
+      return { stop: true, reason: "weak_consensus_fail_fast" };
     }
-    if (queues.isEmpty() && Number(caseState.current_stage || 1) > 6) return { stop: false, reason: "validation_pending" };
+    if (queues.isEmpty() && Number(caseState.current_stage || 1) > 6) {
+      caseState.status = "escalation_required";
+      return { stop: true, reason: "validation_pending_fail_fast" };
+    }
     return { stop: false, reason: null };
   }
 }

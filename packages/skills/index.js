@@ -8,6 +8,8 @@ import {
 
 const DEFAULT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const TOOL_CACHE_VERSION = "tool-v3-shared-memory";
+const TOOL_TIMEOUT_MS = 8000;
+const CACHE_TTL_SECONDS = 300;
 
 function compactTrace(value, maxChars = 1600) {
   try {
@@ -23,6 +25,24 @@ function traceStep(stepName, rawState = {}, rawResult = {}) {
   const state = compactTrace(rawState);
   const result = compactTrace(rawResult);
   console.log("STEP:", stepName, { state, result });
+}
+
+function toolTimeoutMs(input = {}) {
+  return Math.max(500, Number(input.timeout_ms || input.env?.TOOL_TIMEOUT_MS || TOOL_TIMEOUT_MS));
+}
+
+async function withTimeout(operation, ms, label) {
+  let timer = null;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(operation),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function textFrom(input) {
@@ -108,13 +128,20 @@ function deterministicFallback(name, input = {}) {
         severity: signal.severity || digitalTwin?.risk_state?.level || "medium",
         excerpt: JSON.stringify(signal).slice(0, 180)
       }))),
-      evidence: {
-        source: "case_context",
-        governance_basis: ["King IV", "POPIA Act 4 of 2013"],
-        observed_constraints: asArray(context.assumptions).slice(0, 3),
-        similar_cases_considered: asArray(shared.episodic).slice(0, 3),
-        digital_twin_baseline: digitalTwinBrief(context)
-      },
+      evidence: [
+        {
+          source: "case_context",
+          claim: text.slice(0, 240) || "Governed case context reviewed.",
+          governance_basis: ["King IV", "POPIA Act 4 of 2013"],
+          observed_constraints: asArray(context.assumptions).slice(0, 3)
+        },
+        {
+          source: "digital_twin",
+          claim: "Digital twin baseline included in evidence gathering.",
+          governance_basis: ["King IV"],
+          digital_twin_baseline: digitalTwinBrief(context)
+        }
+      ].filter((item) => item.claim || item.digital_twin_baseline),
       confidence: 0.8
     },
     run_porters_five_forces: {
@@ -477,6 +504,14 @@ function validateEvidence(output) {
   return output;
 }
 
+function validateEvidenceArray(output) {
+  validateToolOutput(output);
+  if (!Array.isArray(output.evidence)) throw new Error("Invalid evidence schema");
+  if (output.evidence.length === 0) throw new Error("Evidence must not be empty");
+  if (typeof output.confidence !== "number") throw new Error("Invalid evidence confidence schema");
+  return output;
+}
+
 function validateOptions(output) {
   validateToolOutput(output);
   if (!Array.isArray(output.options)) throw new Error("Invalid options schema");
@@ -618,7 +653,11 @@ function validateScenarioPlanning(output) {
 async function runHybridTool(name, input, buildPrompt, validate) {
   const fallback = deterministicFallback(name, input);
   const prompt = buildPrompt(input);
-  const raw = await callLLM(prompt, input, fallback);
+  const raw = await withTimeout(
+    () => callLLM(prompt, input, fallback),
+    toolTimeoutMs(input),
+    `${name}.llm`
+  );
   const parsed = await enforceJSON(raw, {
     retryLLM: (retryPrompt) => callLLM(retryPrompt, input, fallback),
     fallback
@@ -753,6 +792,7 @@ export async function gather_evidence(input = {}) {
   const caseId = context.case_id || input.case_id || `no-case-${shortHash(textFrom(input))}`;
   const cache = input.cache || input.env?.KV || input.env?.CONFIG_CACHE || null;
   const key = caseScopedKey(caseId, "gather_evidence");
+  const entryKey = cacheEntryKey("gather_evidence", input);
   const fallback = deterministicFallback("gather_evidence", input);
 
   traceStep("gather_evidence.start", { case_id: caseId, key }, { tool: "gather_evidence" });
@@ -772,13 +812,13 @@ export async function gather_evidence(input = {}) {
     if (cache?.get) {
       traceStep("gather_evidence.kv_get", { case_id: caseId, key }, { key_bytes: new TextEncoder().encode(key).length });
       console.log("gather_evidence KV GET", key);
-      const cached = await cache.get(key, "json");
+      const cached = await readCaseCacheEntry(cache, caseId, entryKey);
       if (cached) {
-        const parsedCached = await enforceJSON(cached, { fallback });
+        const parsedCached = await enforceJSON(cached, { fallback: normalizeEvidenceResult(fallback, fallback) });
         const normalizedCached = normalizeEvidenceResult(parsedCached, fallback);
         traceStep("gather_evidence.cache_hit", { case_id: caseId, key }, { output: normalizedCached });
         console.log("gather_evidence CACHE HIT", caseId);
-        return withToolName("gather_evidence", validateEvidence(normalizedCached));
+        return withToolName("gather_evidence", validateEvidenceArray(normalizedCached));
       }
     }
 
@@ -789,7 +829,7 @@ Return JSON:
 {
   "finding": "...",
   "signals": [{"name":"...","severity":"low|medium|high"}],
-  "evidence": {"source":"...","governance_basis":["..."]},
+  "evidence": [{"source":"...","claim":"...","governance_basis":["..."]}],
   "confidence": 0.8
 }
 
@@ -806,16 +846,16 @@ ${JSON.stringify(caseForPrompt(input))}
       retryLLM: (retryPrompt) => callLLM(retryPrompt, input, fallback),
       fallback
     });
-    const output = withToolName("gather_evidence", validateEvidence(normalizeEvidenceResult(parsed, fallback)));
+    const output = withToolName("gather_evidence", validateEvidenceArray(normalizeEvidenceResult(parsed, fallback)));
 
     if (cache?.put) {
       traceStep("gather_evidence.kv_put", { case_id: caseId, key }, { value_type: "json", key_bytes: new TextEncoder().encode(key).length });
       console.log("gather_evidence KV PUT", key);
-      await cache.put(key, JSON.stringify(output), { expirationTtl: 300 });
+      await writeCaseCacheEntry(cache, caseId, entryKey, output);
     }
     console.log("gather_evidence OUTPUT", JSON.stringify({
       case_id: caseId,
-      evidence_keys: Object.keys(output.evidence || {}),
+      evidence_count: asArray(output.evidence).length,
       signals: asArray(output.signals).length,
       confidence: output.confidence
     }));
@@ -823,14 +863,15 @@ ${JSON.stringify(caseForPrompt(input))}
     return output;
   } catch (err) {
     console.error("gather_evidence FAILED", err);
-    const fallbackOutput = withToolName("gather_evidence", validateEvidence({
+    const fallbackOutput = withToolName("gather_evidence", validateEvidenceArray({
       ...fallback,
-      evidence: {
-        ...(fallback.evidence || {}),
-        items: asArray(fallback.evidence?.items),
+      evidence: ensureEvidenceArray(fallback.evidence, fallback).concat({
+        source: "tool_fallback",
+        claim: "Evidence gathering used deterministic fallback after an isolated tool failure.",
+        governance_basis: ["King IV"],
         error: true,
         message: err.message
-      },
+      }),
       error: true,
       message: err.message,
       confidence: Number(fallback.confidence || 0.5)
@@ -842,17 +883,47 @@ ${JSON.stringify(caseForPrompt(input))}
 
 function normalizeEvidenceResult(parsed = {}, fallback = {}) {
   const rawEvidence = parsed.evidence ?? fallback.evidence;
-  const evidence = Array.isArray(rawEvidence)
-    ? { source: parsed.source || "llm", governance_basis: [], items: rawEvidence }
-    : rawEvidence;
-  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) {
-    throw new Error("Missing evidence");
-  }
+  const evidence = ensureEvidenceArray(rawEvidence, fallback);
   return {
     ...fallback,
     ...parsed,
     evidence,
     confidence: Number(parsed.confidence ?? fallback.confidence ?? 0.7)
+  };
+}
+
+function ensureEvidenceArray(rawEvidence, fallback = {}) {
+  if (Array.isArray(rawEvidence)) {
+    return rawEvidence
+      .map((item, index) => normalizeEvidenceItem(item, index))
+      .filter(Boolean);
+  }
+  if (rawEvidence && typeof rawEvidence === "object") {
+    const items = asArray(rawEvidence.items).map((item, index) => normalizeEvidenceItem(item, index)).filter(Boolean);
+    const base = normalizeEvidenceItem(rawEvidence, 0);
+    return [base, ...items].filter(Boolean);
+  }
+  const fallbackItems = Array.isArray(fallback.evidence) ? fallback.evidence : [];
+  if (fallbackItems.length) return fallbackItems.map((item, index) => normalizeEvidenceItem(item, index)).filter(Boolean);
+  return [{
+    source: "case_context",
+    claim: "No external evidence returned; deterministic evidence baseline applied.",
+    governance_basis: ["King IV", "POPIA Act 4 of 2013"]
+  }];
+}
+
+function normalizeEvidenceItem(item, index = 0) {
+  if (!item) return null;
+  if (typeof item === "string") {
+    return { source: "text", claim: item, governance_basis: [] };
+  }
+  if (typeof item !== "object" || Array.isArray(item)) return null;
+  const { items, ...rest } = item;
+  return {
+    source: rest.source || rest.name || `evidence_${index + 1}`,
+    claim: rest.claim || rest.finding || rest.summary || rest.excerpt || JSON.stringify(rest).slice(0, 240),
+    governance_basis: asArray(rest.governance_basis),
+    ...rest
   };
 }
 
@@ -1114,6 +1185,23 @@ ${JSON.stringify(caseForPrompt(state))}
   );
 }
 
+export async function manage_memory(input = {}) {
+  const [memory, reflection, learning] = await Promise.all([
+    extract_memory(input),
+    reflect_on_decision(input),
+    extract_learning(input)
+  ]);
+  validateMemoryExtraction(memory);
+  validateReflection(reflection);
+  validateLearning(learning);
+  return withToolName("manage_memory", {
+    memory,
+    reflection,
+    learning,
+    confidence: Number(((memory.confidence || 0.72) + (reflection.confidence || 0.72) + (learning.confidence || 0.72)) / 3)
+  });
+}
+
 export async function generate_scenarios(input = {}) {
   return runHybridTool(
     "generate_scenarios",
@@ -1182,6 +1270,7 @@ export const tools = {
   extract_memory,
   reflect_on_decision,
   extract_learning,
+  manage_memory,
   generate_scenarios,
   evaluate_outcome
 };
@@ -1204,7 +1293,7 @@ export const toolSchemas = Object.fromEntries(
   ])
 );
 
-function cacheKey(toolName, input = {}) {
+function cacheEntryKey(toolName, input = {}) {
   const caseId = input.context?.case_id || "no-case";
   const stage = input.context?.current_stage || "no-stage";
   const stable = JSON.stringify({
@@ -1227,21 +1316,66 @@ function cacheKey(toolName, input = {}) {
     }
   });
   const hash = shortHash(stable);
-  const key = `tool:${TOOL_CACHE_VERSION}:${toolName}:${caseId}:${stage}:${hash}`;
-  if (new TextEncoder().encode(key).length >= 512) {
-    return `tool:${TOOL_CACHE_VERSION}:${toolName}:${hash}`;
-  }
-  return key;
+  return `${TOOL_CACHE_VERSION}:${toolName}:${stage}:${hash}`;
+}
+
+function cacheKey(toolName, input = {}) {
+  return caseScopedKey(input.context?.case_id || input.case_id || `no-case-${shortHash(textFrom(input))}`, toolName);
 }
 
 function caseScopedKey(caseId = "no-case", suffix = "") {
   const normalizedCaseId = String(caseId || "no-case").replace(/[^a-zA-Z0-9:_-]/g, "_");
-  const compactCaseId = normalizedCaseId.length > 180 ? shortHash(normalizedCaseId) : normalizedCaseId;
-  const key = ["case", compactCaseId, suffix].filter(Boolean).join(":");
-  if (new TextEncoder().encode(key).length >= 512) {
-    return ["case", shortHash(normalizedCaseId), suffix].filter(Boolean).join(":");
-  }
+  const compactCaseId = normalizedCaseId.length > 420 ? shortHash(normalizedCaseId) : normalizedCaseId;
+  const key = `case:${compactCaseId}`;
+  if (new TextEncoder().encode(key).length >= 512) return `case:${shortHash(normalizedCaseId)}`;
   return key;
+}
+
+async function parseCacheDocument(raw) {
+  if (!raw) return { version: TOOL_CACHE_VERSION, entries: {} };
+  try {
+    const parsed = typeof raw === "object" && !Array.isArray(raw)
+      ? raw
+      : await enforceJSON(raw, { fallback: {} });
+    if (parsed?.entries && typeof parsed.entries === "object" && !Array.isArray(parsed.entries)) {
+      return { ...parsed, entries: parsed.entries };
+    }
+    return { version: TOOL_CACHE_VERSION, entries: {} };
+  } catch {
+    return { version: TOOL_CACHE_VERSION, entries: {} };
+  }
+}
+
+async function readCaseCacheEntry(cache, caseId, entryKey) {
+  const key = caseScopedKey(caseId);
+  try {
+    const doc = await parseCacheDocument(await cache.get(key, "json"));
+    return doc.entries?.[entryKey]?.result || null;
+  } catch (error) {
+    traceStep("tool.kv_get.error", { case_id: caseId, key }, { error: error.message });
+    return null;
+  }
+}
+
+async function writeCaseCacheEntry(cache, caseId, entryKey, result) {
+  const key = caseScopedKey(caseId);
+  try {
+    const doc = await parseCacheDocument(cache.get ? await cache.get(key, "json") : null);
+    const entries = { ...(doc.entries || {}) };
+    entries[entryKey] = {
+      result,
+      updated_at: new Date().toISOString()
+    };
+    await cache.put(key, JSON.stringify({
+      version: TOOL_CACHE_VERSION,
+      case_id: String(caseId || "no-case"),
+      entries
+    }), { expirationTtl: CACHE_TTL_SECONDS });
+    return true;
+  } catch (error) {
+    traceStep("tool.kv_put.error", { case_id: caseId, key }, { error: error.message });
+    return false;
+  }
 }
 
 function shortHash(value = "") {
@@ -1257,10 +1391,12 @@ function shortHash(value = "") {
 export async function runTool(name, input = {}) {
   if (!tools[name]) throw new Error("Tool not found");
   const cache = input.cache;
+  const caseId = input.context?.case_id || input.case_id || `no-case-${shortHash(textFrom(input))}`;
   const key = cache ? cacheKey(name, input) : null;
+  const entryKey = cache ? cacheEntryKey(name, input) : null;
   if (cache && key) {
     traceStep("tool.kv_get", { tool_name: name, key }, { key_bytes: new TextEncoder().encode(key).length });
-    const cached = await cache.get(key, "json");
+    const cached = await readCaseCacheEntry(cache, caseId, entryKey);
     if (cached) {
       return safeToolExecution(
         () => enforceJSON(cached, { fallback: deterministicFallback(name, input) }),
@@ -1271,13 +1407,13 @@ export async function runTool(name, input = {}) {
   }
 
   const result = await safeToolExecution(
-    () => tools[name](input),
+    () => withTimeout(() => tools[name](input), toolTimeoutMs(input), name),
     input,
     { toolName: name, schema: toolSchemas[name]?.output_schema, fallback: deterministicFallback(name, input) }
   );
   if (cache && key) {
     traceStep("tool.kv_put", { tool_name: name, key }, { value_type: "json", key_bytes: new TextEncoder().encode(key).length });
-    await cache.put(key, JSON.stringify(result), { expirationTtl: 300 });
+    await writeCaseCacheEntry(cache, caseId, entryKey, result);
   }
   return result;
 }
@@ -1286,7 +1422,7 @@ export async function runToolBatch(calls = [], sharedInput = {}) {
   const pending = new Map();
   return Promise.all(calls.map(({ name, input = {} }) => {
     const mergedInput = { ...sharedInput, ...input };
-    const key = cacheKey(name, mergedInput);
+    const key = cacheEntryKey(name, mergedInput);
     if (!pending.has(key)) {
       pending.set(key, runTool(name, mergedInput));
     }
