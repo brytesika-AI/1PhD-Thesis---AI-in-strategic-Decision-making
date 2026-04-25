@@ -55,7 +55,9 @@ test("multi-agent loop chains tools, selects frameworks, retrieves memory, and n
   });
   const replay = await auditLog.replaySummary("INT-LOOP");
 
-  assert.equal(result.stop_reason, "decision_reached");
+  assert.equal(result.stop_reason, "human_approval_required");
+  assert.equal(result.case_state.status, "awaiting_approval");
+  assert.equal(result.case_state.approval_gates.at(-1).type, "final_decision");
   assert.ok(result.case_state.framework_selection.primary_framework);
   assert.ok(result.case_state.framework_selection.tool_names.length >= 2);
   assert.ok(result.case_state.frameworks.pestle || result.case_state.frameworks.swot);
@@ -90,7 +92,8 @@ test("failure injection: missing memory store data is logged and execution conti
   });
   const replay = await auditLog.replaySummary("INT-MEMORY-FAIL");
 
-  assert.equal(result.stop_reason, "decision_reached");
+  assert.equal(result.stop_reason, "human_approval_required");
+  assert.equal(result.case_state.status, "awaiting_approval");
   assert.ok(replay.events.some((event) => event.event_type === "system_error" && event.output_summary === "memory timeout"));
   assert.ok(result.case_state.narrative.executive_summary);
 });

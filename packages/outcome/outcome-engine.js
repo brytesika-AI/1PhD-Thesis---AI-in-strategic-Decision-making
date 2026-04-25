@@ -11,8 +11,8 @@ export async function runOutcomeEngine(state, env = {}) {
   const caseType = deriveCaseType(goal);
   const globalStore = new GlobalIntelligenceStore(env.DB);
   const [globalInsights, learningSignals] = await Promise.all([
-    globalStore.retrieveHighImpactInsights({ goal, caseType, limit: 3 }),
-    learningSignalsForCase({ caseState: state, env, limit: 3 })
+    globalStore.retrieveHighImpactInsights({ goal, caseType, limit: 3 }).catch(() => []),
+    learningSignalsForCase({ caseState: state, env, limit: 3 }).catch(() => ({ private_lessons: [], adjustment: 0 }))
   ]);
   const strategies = await generateStrategies(goal, env);
   const results = [];

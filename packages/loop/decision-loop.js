@@ -180,6 +180,26 @@ function trimArray(value, limit) {
   return Array.isArray(value) ? value.slice(-limit) : [];
 }
 
+function normalizedRiskLevel(caseState = {}) {
+  return String(
+    caseState.digital_twin?.risk_state?.level
+      || caseState.loop?.risk_state
+      || caseState.risk_state
+      || "elevated"
+  ).toLowerCase();
+}
+
+function finalApprovalRequired(caseState = {}) {
+  const level = normalizedRiskLevel(caseState);
+  const riskScore = Number(
+    caseState.simulation?.highest_risk_score
+      ?? caseState.digital_twin?.risk_state?.score
+      ?? caseState.outcome?.ranked_strategies?.[0]?.simulation?.risk_score
+      ?? 0
+  );
+  return ["medium", "elevated", "high", "critical"].includes(level) || riskScore >= 0.32;
+}
+
 function compactAgentOutput(output = {}) {
   if (!output || typeof output !== "object" || Array.isArray(output)) return output;
   const compacted = { ...output };
@@ -437,13 +457,38 @@ export class DecisionLoop {
     caseState.loop = { ...(caseState.loop || {}), stop_reason: stopReason || "max_iterations" };
     traceStep("decision_loop.termination", caseState, { stop_reason: caseState.loop.stop_reason });
     if (caseState.loop.stop_reason === "decision_reached") {
-      caseState.status = "closed";
-      await this.events.emit("case_closed", {
-        case_id: caseId,
-        agent_id: "decision_governor",
-        output_summary: "Decision loop closed with verification chain satisfied.",
-        raw_payload: { decision: caseState.decision, consensus: caseState.consensus }
-      });
+      if (finalApprovalRequired(caseState)) {
+        caseState.status = "awaiting_approval";
+        caseState.loop.stop_reason = "human_approval_required";
+        caseState.approval_gates = [...(caseState.approval_gates || [])];
+        const hasPendingFinalGate = caseState.approval_gates.some((gate) => gate.type === "final_decision" && gate.status === "pending");
+        if (!hasPendingFinalGate) {
+          caseState.approval_gates.push({
+            approval_id: crypto.randomUUID(),
+            type: "final_decision",
+            stage_id: Number(caseState.current_stage || 7),
+            agent_id: "decision_governor",
+            status: "pending",
+            requested_at: new Date().toISOString(),
+            risk_level: normalizedRiskLevel(caseState),
+            reason: "Medium or higher risk final recommendations require executive or admin approval before closure."
+          });
+        }
+        await this.events.emit("human_escalation_required", {
+          case_id: caseId,
+          agent_id: "decision_governor",
+          output_summary: "Final recommendation is awaiting executive approval before closure.",
+          raw_payload: { decision: caseState.decision, consensus: caseState.consensus, approval_gate: caseState.approval_gates.at(-1) }
+        });
+      } else {
+        caseState.status = "closed";
+        await this.events.emit("case_closed", {
+          case_id: caseId,
+          agent_id: "decision_governor",
+          output_summary: "Decision loop closed with verification chain satisfied.",
+          raw_payload: { decision: caseState.decision, consensus: caseState.consensus }
+        });
+      }
     } else if (caseState.loop.stop_reason === "escalation_required") {
       caseState.status = "escalation_required";
     } else if (caseState.loop.stop_reason === "critical_tool_failure") {
@@ -943,6 +988,24 @@ export class DecisionLoop {
       output_summary: simulationResult.justification,
       raw_payload: simulationResult
     });
+    if (this.memoryStore) {
+      await this.memoryStore.remember({
+        caseState,
+        user,
+        outcome: simulationResult.block_execution ? "failure" : "success",
+        memory: {
+          episodic: [{
+            case_id: caseState.case_id,
+            case_type: caseState.case_facts?.decision_type || "strategic_decision",
+            event_type: "simulation_completed",
+            input: { user_goal: userGoal },
+            output: { best_strategy: simulationResult.best_strategy, strategies_tested: simulationResult.simulation_summary?.length || caseState.outcome?.strategies_tested || 0 },
+            outcome: simulationResult.block_execution ? "failure" : "success",
+            confidence: 0.78
+          }]
+        }
+      }).catch(() => null);
+    }
 
     if (simulationResult.block_execution) {
       caseState.status = "awaiting_approval";
@@ -1257,7 +1320,7 @@ export class DecisionLoop {
         eventBus: this.events,
         caseId: caseState.case_id
       });
-      if (result?.status === "blocked" || result?.status === "error" || result?.error) {
+      if (result?.status === "blocked" || result?.status === "error" || (result?.error && result?.is_retriable === false)) {
         throw new Error(`${result.message || `Tool ${toolName} failed or was blocked.`} Suggestion: ${result.suggestion || "Escalate to the coordinator."}`);
       }
       validateToolOutput(result);
@@ -1265,7 +1328,9 @@ export class DecisionLoop {
       if (!validation.valid) {
         throw new Error(validation.reason);
       }
-      this.recordToolSuccess(caseState, toolName);
+      if (!result?.error) {
+        this.recordToolSuccess(caseState, toolName);
+      }
       traceStep("tool.execution.end", caseState, { agent_id: agent.id, tool_name: toolName, result });
       return {
         toolName,

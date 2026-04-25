@@ -282,8 +282,29 @@ export class OrchestrationGateway {
     gate.reviewer = reviewer;
     gate.notes = notes;
     gate.decided_at = new Date().toISOString();
-    caseState.status = approved ? "active" : "revision_required";
-    caseState.current_stage = approved ? Math.min(Number(gate.stage_id) + 1, 7) : Number(gate.stage_id);
+    if (gate.type === "final_decision") {
+      caseState.status = approved ? "closed" : "revision_required";
+      caseState.current_stage = 7;
+      caseState.decision = {
+        ...(caseState.decision || {}),
+        approval_status: gate.status,
+        approved_by: approved ? reviewer : null,
+        rejected_by: approved ? null : reviewer,
+        approval_decided_at: gate.decided_at,
+        approval_rationale: notes
+      };
+      caseState.loop = {
+        ...(caseState.loop || {}),
+        stop_reason: approved ? "decision_closed_by_human_approval" : "revision_requested_by_human"
+      };
+    } else {
+      caseState.status = approved ? "active" : "revision_required";
+      caseState.current_stage = approved ? Math.min(Number(gate.stage_id) + 1, 7) : Number(gate.stage_id);
+      caseState.loop = {
+        ...(caseState.loop || {}),
+        stop_reason: approved ? null : "revision_requested_by_human"
+      };
+    }
 
     const auditRef = await this.hooks.emit("audit_event", {
       event_type: approved ? "human_approval_approved" : "human_approval_rejected",
@@ -298,6 +319,21 @@ export class OrchestrationGateway {
       raw_payload: gate
     });
     caseState.audit_log_refs.push(auditRef);
+    if (approved && gate.type === "final_decision") {
+      const closedAuditRef = await this.hooks.emit("audit_event", {
+        event_type: "case_closed",
+        case_id: caseId,
+        agent_id: "decision_governor",
+        input_summary: "Final approval received.",
+        output_summary: "Case closed after executive approval.",
+        tools_used: [],
+        model_used: "human-review",
+        policy_checks: [{ approval_id: approvalId, decision: gate.status, allowed: true }],
+        human_approval: true,
+        raw_payload: { approval_gate: gate, decision: caseState.decision }
+      });
+      caseState.audit_log_refs.push(closedAuditRef);
+    }
     await this.hooks.emit("state_snapshot", { case_state: caseState });
     return { case_state: caseState, approval_gate: gate, audit_ref: auditRef };
   }

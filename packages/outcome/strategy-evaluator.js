@@ -67,6 +67,6 @@ Return JSON:
 }
 `;
 
-  const raw = await callLLM({ task: "evaluation", prompt, temperature: 0, env });
+  const raw = await callLLM({ task: "evaluation", prompt, temperature: 0, env }).catch(() => JSON.stringify(fallback));
   return normalizeEvaluation(parseJSONObject(raw, fallback), fallback);
 }

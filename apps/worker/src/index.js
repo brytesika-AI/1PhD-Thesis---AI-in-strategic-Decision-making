@@ -527,10 +527,10 @@ export default {
           env,
           ctx,
           user,
-          body: { ...body, simulation_mode_enabled: true },
+          body: { ...body, max_iterations: Math.max(Number(body.max_iterations || 0), 20), simulation_mode_enabled: true },
           command: "run_simulation_before_decision",
           suffix: "Run simulation mode before final decision. Select the best strategy and block execution if simulated risk exceeds threshold.",
-          maxIterations: 16
+          maxIterations: 20
         });
         return jsonResponse(request, { case_id: caseId, ...result }, result.status || 200);
       }

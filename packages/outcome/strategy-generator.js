@@ -70,7 +70,7 @@ Return JSON:
 }
 `;
 
-  const raw = await callLLM({ task: "planning", prompt, temperature: 0.3, env });
+  const raw = await callLLM({ task: "planning", prompt, temperature: 0.3, env }).catch(() => JSON.stringify({ strategies: fallbackStrategies(goal) }));
   const parsed = parseJSONObject(raw, { strategies: [] });
   const strategies = normalizeStrategies(parsed.strategies, goal);
   if (strategies.length < 3) {

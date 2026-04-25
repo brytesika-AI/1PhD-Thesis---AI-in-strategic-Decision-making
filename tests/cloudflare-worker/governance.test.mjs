@@ -339,8 +339,9 @@ test("stateful decision loop emits events, executes tools, and reaches a governe
   });
   const replay = await auditLog.replaySummary("CASE-LOOP");
 
-  assert.equal(result.stop_reason, "decision_reached");
-  assert.equal(result.case_state.status, "closed");
+  assert.equal(result.stop_reason, "human_approval_required");
+  assert.equal(result.case_state.status, "awaiting_approval");
+  assert.equal(result.case_state.approval_gates.at(-1).type, "final_decision");
   assert.equal(result.case_state.verification_chain.devil_advocate_validated, true);
   assert.equal(result.case_state.verification_chain.policy_sentinel_validated, true);
   assert.equal(result.case_state.verification_chain.consensus_tracker_confirmed, true);
@@ -356,7 +357,7 @@ test("stateful decision loop emits events, executes tools, and reaches a governe
   assert.ok(replay.events.some((event) => event.event_type === "tool_execution_start"));
   assert.ok(replay.events.some((event) => event.event_type === "queue_enqueued"));
   assert.ok(replay.events.some((event) => event.event_type === "consensus_updated"));
-  assert.ok(replay.events.some((event) => event.event_type === "case_closed"));
+  assert.ok(replay.events.some((event) => event.event_type === "human_escalation_required"));
 });
 
 test("decision loop routes Devil's Advocate objections through debate queue", async () => {
@@ -383,7 +384,8 @@ test("decision loop routes Devil's Advocate objections through debate queue", as
     maxIterations: 12
   });
 
-  assert.equal(result.stop_reason, "decision_reached");
+  assert.equal(result.stop_reason, "human_approval_required");
+  assert.equal(result.case_state.status, "awaiting_approval");
   assert.equal(result.case_state.objections[0].status, "answered");
   assert.equal(result.case_state.rebuttals.length, 1);
   assert.equal(result.case_state.consensus.level, "high");
@@ -809,7 +811,8 @@ test("decision loop retrieves and writes episodic, semantic, and procedural memo
   const learned = db.proceduralMemory.get("org-memory:cloud_migration");
   const replay = await auditLog.replaySummary("CASE-MEMORY");
 
-  assert.equal(result.stop_reason, "decision_reached");
+  assert.equal(result.stop_reason, "human_approval_required");
+  assert.equal(result.case_state.status, "awaiting_approval");
   assert.equal(result.case_state.memory.procedural[0].task_type, "cloud_migration");
   assert.ok(db.episodicMemory.length >= 1);
   assert.ok(db.semanticMemory.length >= 1);

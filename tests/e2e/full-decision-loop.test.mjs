@@ -96,8 +96,9 @@ test("full AI_SRF scenario completes with frameworks, blending, simulation, twin
   const state = result.case_state;
   const replay = await new D1AuditLog(db).replaySummary("E2E-CLOUD-POPIA");
 
-  assert.equal(result.stop_reason, "decision_reached");
-  assert.equal(state.status, "closed");
+  assert.equal(result.stop_reason, "human_approval_required");
+  assert.equal(state.status, "awaiting_approval");
+  assert.equal(state.approval_gates.at(-1).type, "final_decision");
   assert.ok(state.framework_selection.primary_framework);
   assert.ok(state.framework_selection.secondary_frameworks.length >= 1);
   assert.ok(Object.values(state.framework_outputs).some(Boolean));
