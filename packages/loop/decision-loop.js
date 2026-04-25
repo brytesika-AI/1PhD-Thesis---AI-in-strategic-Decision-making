@@ -1309,7 +1309,6 @@ export class DecisionLoop {
         traceStep("framework_tool.execution.end", caseState, { agent_id: agent.id, tool_name: frameworkTool, result });
         return { frameworkTool, result };
       } catch (error) {
-        this.recordToolFailure(caseState, frameworkTool, error);
         traceStep("framework_tool.execution.error", caseState, { agent_id: agent.id, tool_name: frameworkTool, error: error.message });
         await this.events.emit("system_error", {
           case_id: caseState.case_id,
