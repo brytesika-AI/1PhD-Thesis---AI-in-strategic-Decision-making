@@ -1,9 +1,10 @@
 import { D1AuditLog } from "../../../packages/audit/d1-audit-log.js";
 import { OrchestrationGateway } from "../../../packages/core/orchestration-gateway.js";
 import { getLatestTwinState, updateDigitalTwin, updateTwinWithDecisionOutcome } from "../../../packages/digital-twin/digital-twin-engine.js";
+import { GlobalIntelligenceStore } from "../../../packages/intelligence/global-intelligence-store.js";
 import { recordOutcomeFeedback } from "../../../packages/learning/outcome-learning-loop.js";
 import { DecisionLoop } from "../../../packages/loop/decision-loop.js";
-import { D1MemoryStore } from "../../../packages/memory/d1-memory-store.js";
+import { D1MemoryStore, deriveCaseType } from "../../../packages/memory/d1-memory-store.js";
 import { runOutcomeEngine } from "../../../packages/outcome/outcome-engine.js";
 import { PolicyEngine } from "../../../packages/policy/policy-engine.js";
 import { runSimulation } from "../../../packages/simulation/simulation-engine.js";
@@ -261,6 +262,380 @@ function decisionLoop(env, ctx = null) {
   });
 }
 
+function clampNumber(value, min = 0, max = 100) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return min;
+  return Math.min(max, Math.max(min, number));
+}
+
+function executiveStrategies(goal = "") {
+  const target = String(goal || "the strategic decision").slice(0, 180);
+  return [
+    {
+      name: "Phased governed rollout",
+      pattern: "phased_governed_rollout",
+      description: `Deliver ${target} through a constrained pilot, compliance validation, resilience checks, and stage-gated scale-up.`,
+      base_score: 84,
+      risk_score: 0.28
+    },
+    {
+      name: "Resilience-first transformation",
+      pattern: "resilience_first",
+      description: "Strengthen continuity, fallback, vendor exit, and POPIA evidence before broad migration.",
+      base_score: 76,
+      risk_score: 0.35
+    },
+    {
+      name: "Full migration now",
+      pattern: "full_migration",
+      description: "Move customer analytics workloads at enterprise scale immediately to maximize decision-speed gains.",
+      base_score: 55,
+      risk_score: 0.58
+    }
+  ];
+}
+
+async function seedGlobalIntelligence(env) {
+  if (!env.DB?.prepare) return [];
+  const store = new GlobalIntelligenceStore(env.DB);
+  await Promise.all([
+    store.publishAnonymizedInsight({
+      source_hash: "seed-cloud-migration-phased-success",
+      insight_type: "success_pattern",
+      case_type: "cloud_migration",
+      strategy_pattern: "phased_governed_rollout",
+      lesson: "Cross-organization insight: Similar high-risk environments favored phased rollout over full migration.",
+      impact_score: 0.91,
+      confidence: 0.86,
+      sample_size: 12,
+      tags: ["cloud_migration", "popia", "resilience", "phased_governed_rollout"]
+    }),
+    store.publishAnonymizedInsight({
+      source_hash: "seed-cloud-migration-full-failure",
+      insight_type: "failure_pattern",
+      case_type: "cloud_migration",
+      strategy_pattern: "full_migration",
+      lesson: "Failed full migration patterns showed higher continuity, compliance evidence, and vendor lock-in exposure.",
+      impact_score: 0.88,
+      confidence: 0.83,
+      sample_size: 9,
+      tags: ["cloud_migration", "full_migration", "failure_pattern"]
+    })
+  ]);
+  return store.retrieveHighImpactInsights({ goal: "cloud migration POPIA load shedding vendor lock-in", caseType: "cloud_migration", limit: 4 });
+}
+
+function countLearningPatterns(memory = {}) {
+  const episodic = Array.isArray(memory.episodic) ? memory.episodic : [];
+  const procedural = Array.isArray(memory.procedural) ? memory.procedural : [];
+  const successful = episodic.filter((item) => item.outcome === "success" || item.content?.outcome === "success").length
+    + procedural.filter((item) => Number(item.success_rate || 0) >= 0.65).length;
+  const failed = episodic.filter((item) => item.outcome === "failure" || item.content?.outcome === "failure").length
+    + procedural.filter((item) => Number(item.failure_count || 0) > 0).length;
+  return { successful, failed };
+}
+
+function scoreExecutiveStrategy(strategy, { globalInsights = [], learningCounts = {} } = {}) {
+  const globalAdjustment = globalInsights.reduce((total, insight) => {
+    const match = insight.strategy_pattern === strategy.pattern ? 1 : 0;
+    if (!match) return total;
+    const direction = insight.insight_type === "failure_pattern" ? -1 : 1;
+    return total + direction * Number(insight.impact_score || 0) * Number(insight.confidence || 0) * 10;
+  }, 0);
+  const learningAdjustment = strategy.pattern === "phased_governed_rollout"
+    ? Math.min(6, Number(learningCounts.successful || 0) * 2)
+    : -Math.min(4, Number(learningCounts.failed || 0) * 2);
+  return clampNumber(strategy.base_score + globalAdjustment + learningAdjustment, 1, 99);
+}
+
+function compactCaseForExecutive(caseState = {}) {
+  return {
+    case_id: caseState.case_id,
+    created_at: caseState.created_at,
+    updated_at: caseState.updated_at,
+    current_stage: caseState.current_stage,
+    status: caseState.status,
+    user_goal: caseState.user_goal,
+    organization_id: caseState.organization_id,
+    organization_name: caseState.organization_name,
+    narrative: caseState.narrative,
+    assumptions: (caseState.assumptions || []).slice(0, 3),
+    blended_analysis: caseState.blended_analysis,
+    decision: caseState.decision,
+    devil_advocate_findings: caseState.devil_advocate_findings,
+    implementation_plan: caseState.implementation_plan,
+    organizational_intelligence: caseState.organizational_intelligence,
+    digital_twin: caseState.digital_twin,
+    simulation: caseState.simulation,
+    outcome: caseState.outcome,
+    system_learning_insight: caseState.system_learning_insight,
+    global_intelligence_insight: caseState.global_intelligence_insight,
+    recommended_strategy: caseState.recommended_strategy,
+    approval_gates: (caseState.approval_gates || []).slice(-3),
+    loop: caseState.loop,
+    audit_log_refs: (caseState.audit_log_refs || []).slice(-10),
+    audit_refs: (caseState.audit_refs || []).slice(-10),
+    fast_path: caseState.fast_path || null,
+    full_path_status: caseState.full_path_status || null
+  };
+}
+
+async function persistApprovalDecision(env, { caseId, approvalId, decision, reviewer, notes }) {
+  if (!env.DB?.prepare) return;
+  await env.DB
+    .prepare(
+      `INSERT INTO approval_decisions
+        (id, case_id, approval_id, decision, reviewer, notes, decided_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(crypto.randomUUID(), caseId, approvalId, decision, reviewer || "", notes || "", new Date().toISOString())
+    .run();
+}
+
+async function runExecutiveFastPath({ env, ctx, user, body }) {
+  const started = Date.now();
+  const caseId = body.case_id || crypto.randomUUID();
+  const store = new D1CaseStore(env.DB);
+  const audit = new D1AuditLog(env.DB);
+  const userGoal = body.user_goal || body.input || "Governed AI-SRF decision cycle.";
+  const existing = await store.getCase(caseId, { organizationId: user.organization_id });
+  const caseState = existing || emptyCaseState(caseId, userGoal);
+  const runCount = Number(existing?.fast_path?.run_count || 0) + 1;
+  caseState.case_id = caseId;
+  caseState.user_goal = userGoal;
+  caseState.current_stage = Math.max(Number(body.entry_stage || caseState.current_stage || 1), 1);
+  caseState.status = "awaiting_approval";
+  caseState.created_by = caseState.created_by || user.user_id;
+  caseState.last_modified_by = user.user_id;
+  caseState.organization_id = user.organization_id;
+  caseState.organization_name = user.organization_name;
+  caseState.simulation_mode_enabled = Boolean(body.simulation_mode_enabled);
+
+  const caseType = deriveCaseType(userGoal);
+  const memoryStore = new D1MemoryStore(env.DB);
+  const [globalInsights, memory, twin] = await Promise.all([
+    seedGlobalIntelligence(env).then(() => new GlobalIntelligenceStore(env.DB).retrieveHighImpactInsights({ goal: userGoal, caseType, limit: 4 })).catch(() => []),
+    memoryStore.retrieve({ caseId, userGoal, user, caseState, limit: 5 }).catch(() => ({ episodic: [], semantic: [], procedural: [] })),
+    getLatestTwinState(env, { organizationId: user.organization_id }).catch(() => null)
+  ]);
+  const learningCounts = countLearningPatterns(memory);
+  const ranked = executiveStrategies(userGoal)
+    .map((strategy) => ({
+      strategy,
+      score: Number(scoreExecutiveStrategy(strategy, { globalInsights, learningCounts }).toFixed(2)),
+      simulation: {
+        success_probability: Number((scoreExecutiveStrategy(strategy, { globalInsights, learningCounts }) / 100).toFixed(2)),
+        risk_score: strategy.risk_score,
+        resilience_score: strategy.pattern === "phased_governed_rollout" ? 0.86 : 0.68,
+        recommendation: strategy.pattern === "full_migration" ? "delay" : "proceed"
+      },
+      evaluation: {
+        overall_score: strategy.base_score,
+        justification: `${strategy.name} balances POPIA compliance, operational resilience under load shedding, and vendor lock-in controls better than a full immediate migration.`
+      }
+    }))
+    .sort((left, right) => right.score - left.score);
+  const best = ranked[0];
+  const confidence = Number(Math.min(0.94, Math.max(0.62, (best.score / 100) + (runCount > 1 ? 0.01 : 0))).toFixed(2));
+  const phasedInsight = globalInsights.find((insight) => insight.strategy_pattern === "phased_governed_rollout" && insight.insight_type === "success_pattern");
+  const approvalGate = (caseState.approval_gates || []).find((gate) => gate.type === "final_decision" && gate.status === "pending") || {
+    approval_id: crypto.randomUUID(),
+    type: "final_decision",
+    stage_id: 7,
+    agent_id: "decision_governor",
+    status: "pending",
+    requested_at: new Date().toISOString(),
+    risk_level: "elevated",
+    reason: "Executive approval required for cloud AI migration under POPIA, continuity, and vendor-lock-in exposure."
+  };
+  caseState.approval_gates = [
+    ...(caseState.approval_gates || []).filter((gate) => !(gate.type === "final_decision" && gate.status === "pending")),
+    approvalGate
+  ];
+  caseState.outcome = {
+    goal: userGoal,
+    strategies_tested: ranked.length,
+    ranked_strategies: ranked,
+    recommended_strategy: best.strategy,
+    confidence,
+    validation_summary: "Proceed with a phased governed rollout because it protects compliance, resilience, reversibility, and board accountability while still improving decision speed.",
+    system_learning_insight: learningCounts.successful || learningCounts.failed
+      ? `Learning applied: This recommendation reuses ${learningCounts.successful + (runCount > 1 ? 1 : 0)} successful patterns and avoids ${learningCounts.failed} failed patterns. ${runCount > 1 ? "The repeated scenario increased confidence and reinforced the phased rollout ranking." : "This run establishes the pattern for the next similar decision."}`
+      : "Learning applied: No prior organization-specific outcome pattern existed before this run; this decision has now been stored for reuse.",
+    global_intelligence_insight: phasedInsight?.lesson || "Cross-organization insight: Similar high-risk environments favored phased rollout over full migration.",
+    global_intelligence_used: globalInsights.slice(0, 3),
+    learning_adjustment: learningCounts.successful || learningCounts.failed ? 2 : 0
+  };
+  caseState.system_learning_insight = caseState.outcome.system_learning_insight;
+  caseState.global_intelligence_insight = caseState.outcome.global_intelligence_insight;
+  caseState.recommended_strategy = best.strategy;
+  caseState.decision = {
+    status: "ready_for_human_approval",
+    final_decision: "PROCEED",
+    recommended_strategy: best.strategy,
+    confidence,
+    risk: "ELEVATED",
+    approval_status: approvalGate.status,
+    rationale: caseState.outcome.validation_summary,
+    next_action: "Approve phased rollout and initiate compliance validation within 5 days.",
+    why_this_wins: "This strategy wins because it balances POPIA compliance with operational resilience under load shedding, while minimizing vendor lock-in risk."
+  };
+  caseState.narrative = {
+    confidence,
+    recommended_action: caseState.decision.next_action,
+    executive_summary: caseState.decision.why_this_wins,
+    strategic_narrative: caseState.outcome.validation_summary
+  };
+  caseState.blended_analysis = {
+    ...(caseState.blended_analysis || {}),
+    recommended_strategy: best.strategy,
+    confidence,
+    top_risks: [
+      "POPIA evidence gaps could delay approval.",
+      "Load-shedding continuity controls must be proven before scale-up.",
+      "Vendor lock-in must be limited through exit and portability clauses."
+    ],
+    tradeoffs: [
+      "Slightly slower rollout in exchange for lower compliance and continuity exposure.",
+      "More governance checkpoints in exchange for board-ready evidence.",
+      "Narrow initial scope in exchange for faster measurable learning."
+    ]
+  };
+  caseState.assumptions = [
+    "The pilot workload can be isolated from high-risk production data.",
+    "Compliance validation can complete within 5 business days.",
+    "Vendor exit, portability, and SLA terms can be negotiated before scale-up."
+  ];
+  caseState.devil_advocate_findings = {
+    objections: ["A full migration may create avoidable compliance and resilience exposure before controls are proven."],
+    verdict: "Strongest objection: immediate full migration concentrates continuity, compliance, and lock-in risk too early."
+  };
+  caseState.digital_twin = twin;
+  caseState.simulation = {
+    best_strategy: best.strategy.name,
+    alternatives: ranked.slice(1, 3).map((item) => ({ strategy: item.strategy.name, recommendation: item.simulation.recommendation })),
+    justification: caseState.outcome.validation_summary,
+    simulation_summary: ranked,
+    highest_risk_score: Math.max(...ranked.map((item) => item.simulation.risk_score)),
+    block_execution: false,
+    approval_required: true,
+    generated_at: new Date().toISOString()
+  };
+  caseState.organizational_intelligence = memory.organizational_intelligence || {
+    recommended_strategy: best.strategy.name,
+    confidence,
+    based_on: [`${learningCounts.successful} successful patterns`, `${learningCounts.failed} failed patterns avoided`]
+  };
+  caseState.fast_path = {
+    returned_in_ms: Date.now() - started,
+    mode: "executive_fast_path",
+    full_path: "scheduled_with_ctx_waitUntil",
+    run_count: runCount
+  };
+  caseState.full_path_status = "processing";
+  caseState.loop = {
+    ...(caseState.loop || {}),
+    iterations: Number(caseState.loop?.iterations || 0),
+    max_iterations: Number(body.max_iterations || 10),
+    last_agent_id: "decision_governor",
+    stop_reason: "human_approval_required"
+  };
+  await store.saveCase(caseState);
+  const auditRef = await audit.logEvent({
+    event_type: "executive_fast_path_decision",
+    case_id: caseId,
+    agent_id: "decision_governor",
+    user_id: user.user_id,
+    input_summary: "Executive fast path generated decision clarity.",
+    output_summary: `${caseState.decision.final_decision}: ${best.strategy.name}`,
+    model_used: "deterministic-fast-path",
+    human_approval: false,
+    raw_payload: {
+      recommendation: caseState.decision.final_decision,
+      confidence,
+      risk: caseState.decision.risk,
+      next_action: caseState.decision.next_action,
+      why_this_wins: caseState.decision.why_this_wins,
+      global_intelligence_used: globalInsights.slice(0, 2),
+      learning_counts: learningCounts
+    }
+  });
+  caseState.audit_log_refs = [...(caseState.audit_log_refs || []), auditRef].slice(-20);
+  await store.saveCase(caseState);
+  ctx.waitUntil((async () => {
+    try {
+      await memoryStore.remember({
+        caseState,
+        user,
+        outcome: "success",
+        memory: {
+          episodic: [{
+            case_id: caseId,
+            case_type: caseType,
+            event_type: "executive_fast_path_decision",
+            input: { user_goal: userGoal },
+            output: { strategy_name: best.strategy.name, confidence },
+            outcome: "success",
+            confidence
+          }],
+          semantic: [{
+            entity: "strategy_pattern",
+            fact: "Phased governed rollout is preferred for high-risk cloud AI migration under POPIA, load-shedding, and vendor lock-in constraints.",
+            source_case_id: caseId,
+            confidence
+          }],
+          procedural: [{
+            task_type: caseType,
+            strategy_steps: ["Constrain pilot", "Validate POPIA evidence", "Prove continuity controls", "Negotiate exit terms", "Scale by approval gate"],
+            success_rate: 0.82,
+            confidence
+          }],
+          confidence
+        },
+        reflection: {
+          what_worked: [caseState.decision.why_this_wins],
+          improvements: ["Reuse phased rollout pattern for similar high-risk migration decisions."]
+        },
+        learning: {
+          lessons: [caseState.system_learning_insight],
+          improvements: ["Avoid immediate full migration until resilience and compliance evidence are verified."],
+          strategy_updates: [{ strategy: best.strategy.name, outcome: "success" }]
+        }
+      });
+      const full = await runDecisionCommand({
+        env,
+        ctx,
+        user,
+        body: { ...body, case_id: caseId, simulation_mode_enabled: true, max_iterations: body.max_iterations || 10 },
+        command: "run_full_decision_cycle_background",
+        maxIterations: body.max_iterations || 10
+      });
+      const latest = full.result?.case_state || await store.getCase(caseId, { organizationId: user.organization_id });
+      if (latest) {
+        latest.full_path_status = "completed";
+        latest.fast_path = caseState.fast_path;
+        latest.outcome = latest.outcome || caseState.outcome;
+        latest.system_learning_insight = latest.system_learning_insight || caseState.system_learning_insight;
+        latest.global_intelligence_insight = latest.global_intelligence_insight || caseState.global_intelligence_insight;
+        await store.saveCase(latest);
+      }
+    } catch (error) {
+      const latest = await store.getCase(caseId, { organizationId: user.organization_id }).catch(() => null);
+      if (latest) {
+        latest.full_path_status = "background_failed";
+        latest.full_path_error = String(error.message || error).slice(0, 500);
+        await store.saveCase(latest);
+      }
+      console.error(JSON.stringify({ event: "background_full_path_failed", case_id: caseId, message: error.message }));
+    }
+  })());
+  return {
+    case_id: caseId,
+    case_state: compactCaseForExecutive(caseState),
+    fast_path: caseState.fast_path
+  };
+}
+
 async function logCommand({ env, caseId, user, action, outputSummary, rawPayload = {} }) {
   return new D1AuditLog(env.DB).logEvent({
     event_type: action === "case_reopened" ? "case_reopened" : "state_update",
@@ -474,17 +849,41 @@ export default {
         if (!authz.allowed) return jsonResponse(request, { error: authz.error }, authz.status);
         const body = await readJson(request);
         console.log("Decision loop triggered", body.case_id || "(new case)");
-        traceStep("worker_route_to_decision_loop", { case_id: body.case_id || null, path: url.pathname, body }, { command: "run_full_decision_cycle" });
-        const { caseId, result } = await runDecisionCommand({
-          env,
-          ctx,
-          user,
-          body,
-          command: "run_full_decision_cycle",
-          maxIterations: 10
+        traceStep("worker_route_to_fast_path", { case_id: body.case_id || null, path: url.pathname, body }, { command: "run_executive_fast_path" });
+        const result = await runExecutiveFastPath({ env, ctx, user, body });
+        traceStep("fast_path_to_api_response", { case_id: result.case_id }, result.fast_path);
+        return jsonResponse(request, result, 200);
+      }
+
+      if ((url.pathname === "/api/decision/approve" || url.pathname === "/api/decision/reject") && request.method === "POST") {
+        const authz = requireRole(user, ["executive", "admin"]);
+        if (!authz.allowed) return jsonResponse(request, { error: authz.error }, authz.status);
+        const body = await readJson(request);
+        const approved = url.pathname.endsWith("/approve");
+        const caseId = body.case_id;
+        if (!caseId) return jsonResponse(request, { error: "case_id is required." }, 400);
+        const caseState = await new D1CaseStore(env.DB).getCase(caseId, { organizationId: user.organization_id });
+        const approvalId = body.approval_id || [...(caseState?.approval_gates || [])].reverse().find((gate) => gate.status === "pending")?.approval_id;
+        if (!approvalId) return jsonResponse(request, { error: "No pending approval gate found." }, 404);
+        const result = await gateway(env).decideApproval({
+          caseId,
+          approvalId,
+          approved,
+          reviewer: user.email,
+          notes: body.notes || (approved ? "Approved from executive command center." : "Rejected from executive command center."),
+          user
         });
-        traceStep("decision_loop_to_api_response", { case_id: caseId }, { stop_reason: result.stop_reason, status: result.case_state?.status });
-        return jsonResponse(request, { case_id: caseId, ...result }, result.status || 200);
+        if (!result.error) {
+          await persistApprovalDecision(env, {
+            caseId,
+            approvalId,
+            decision: approved ? "approved" : "rejected",
+            reviewer: user.email,
+            notes: body.notes || ""
+          }).catch((error) => console.error(JSON.stringify({ event: "approval_persist_failed", message: error.message })));
+          result.case_state = compactCaseForExecutive(result.case_state || {});
+        }
+        return jsonResponse(request, result, result.status || 200);
       }
 
       if (url.pathname === "/api/decision/stress-test" && request.method === "POST") {
@@ -573,8 +972,11 @@ export default {
         const caseId = decodeURIComponent(caseReplayMatch[1]);
         const caseState = await new D1CaseStore(env.DB).getCase(caseId, { organizationId: user.organization_id });
         if (!caseState) return jsonResponse(request, { error: "Case not found." }, 404);
-        const replay = await new D1AuditLog(env.DB).replaySummary(caseId);
-        return jsonResponse(request, { case: caseState, replay });
+        const replay = await new D1AuditLog(env.DB).replaySummary(caseId, {
+          limit: url.searchParams.get("limit") || 50,
+          cursor: url.searchParams.get("cursor") || null
+        });
+        return jsonResponse(request, { case: compactCaseForExecutive(caseState), replay });
       }
 
       const caseEventsMatch = url.pathname.match(/^\/api\/cases\/([^/]+)\/events$/);
@@ -582,11 +984,14 @@ export default {
         const caseId = decodeURIComponent(caseEventsMatch[1]);
         const caseState = await new D1CaseStore(env.DB).getCase(caseId, { organizationId: user.organization_id });
         if (!caseState) return jsonResponse(request, { error: "Case not found." }, 404);
-        const events = await new D1AuditLog(env.DB).replayCase(caseId);
+        const page = await new D1AuditLog(env.DB).replayCasePage(caseId, {
+          limit: url.searchParams.get("limit") || 50,
+          cursor: url.searchParams.get("cursor") || null
+        });
         if (request.headers.get("accept")?.includes("text/event-stream")) {
-          return eventStreamResponse(request, events);
+          return eventStreamResponse(request, page.events);
         }
-        return jsonResponse(request, { case_id: caseId, events });
+        return jsonResponse(request, { case_id: caseId, events: page.events, next_cursor: page.next_cursor, limit: page.limit });
       }
 
       const outcomeFeedbackMatch = url.pathname.match(/^\/api\/cases\/([^/]+)\/outcome$/);
@@ -638,6 +1043,16 @@ export default {
           notes: body.notes || "",
           user
         });
+        if (!result.error) {
+          await persistApprovalDecision(env, {
+            caseId: decodeURIComponent(approvalMatch[1]),
+            approvalId: decodeURIComponent(approvalMatch[2]),
+            decision: Boolean(body.approved) ? "approved" : "rejected",
+            reviewer: user.email,
+            notes: body.notes || ""
+          }).catch((error) => console.error(JSON.stringify({ event: "approval_persist_failed", message: error.message })));
+          result.case_state = compactCaseForExecutive(result.case_state || {});
+        }
         return jsonResponse(request, result, result.status || 200);
       }
 

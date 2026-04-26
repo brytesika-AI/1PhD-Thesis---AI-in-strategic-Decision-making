@@ -184,3 +184,16 @@ CREATE TABLE IF NOT EXISTS global_intelligence (
 
 CREATE INDEX IF NOT EXISTS idx_global_intelligence_rank
 ON global_intelligence(case_type, impact_score, confidence, sample_size, updated_at);
+
+CREATE TABLE IF NOT EXISTS approval_decisions (
+    id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL,
+    approval_id TEXT NOT NULL,
+    decision TEXT NOT NULL CHECK(decision IN ('approved', 'rejected')),
+    reviewer TEXT,
+    notes TEXT,
+    decided_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_approval_decisions_case
+ON approval_decisions(case_id, approval_id, decided_at);

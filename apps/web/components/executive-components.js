@@ -98,10 +98,17 @@ function decisionFrom(state = {}) {
 }
 
 function nextActionFrom(state = {}, verdict = {}) {
+  if (state.decision?.next_action) return state.decision.next_action;
   if (verdict.approval_status === "APPROVED") return "Execute approved governance plan and monitor assumptions.";
   if (verdict.approval_status === "REJECTED") return "Return to revision before any execution decision.";
   if (verdict.approval_required) return "Executive approval required before closure.";
   return "Proceed under monitoring controls.";
+}
+
+function whyWinsFrom(state = {}) {
+  return state.decision?.why_this_wins
+    || state.outcome?.validation_summary
+    || "This strategy wins because it balances value, risk, resilience, compliance evidence, and executive accountability better than the alternatives.";
 }
 
 function buildExecutiveVerdict(state = {}) {
@@ -205,7 +212,7 @@ function renderExecutiveVerdict(state = {}) {
   state.executive_verdict = verdict;
   el("executiveVerdict").innerHTML = `
     <div class="verdict-card">
-      <h2>Recommendation</h2>
+      <h2>Final Decision</h2>
       <div class="verdict-action">${safeHtml(verdict.decision)}</div>
       <div class="card-note">${safeHtml(verdict.strategy)}</div>
     </div>
@@ -225,9 +232,8 @@ function renderExecutiveVerdict(state = {}) {
       <span class="status-pill ${safeHtml(verdict.approval_status.toLowerCase())}">${safeHtml(verdict.approval_status)}</span>
     </div>
     <div class="verdict-card">
-      <h2>Decision Owner</h2>
-      <div class="metric-value" style="font-size: 22px;">${safeHtml(verdict.owner)}</div>
-      <div class="card-note">Human authority remains with the accountable executive/admin.</div>
+      <h2>Why This Strategy Wins</h2>
+      <div class="card-note">${safeHtml(whyWinsFrom(state))}</div>
     </div>
     <div class="verdict-card">
       <h2>Next Action</h2>
