@@ -27,7 +27,8 @@ const REQUEST_LIMITS = {
   maxSubrequests: 90,
   maxToolCalls: 24,
   maxStateBytes: 750000,
-  maxCacheValueBytes: 131072
+  maxCacheValueBytes: 131072,
+  maxResponseBytes: 262144
 };
 
 function allowedCorsOrigin(request) {
@@ -57,10 +58,66 @@ function corsHeadersFor(request) {
   };
 }
 
+function errorEnvelope({
+  errorCategory = "validation",
+  isRetriable = false,
+  technicalMessage = "Request failed.",
+  customerMessage = "The request could not be completed.",
+  suggestion = "Review the request and try again.",
+  coverageGap = undefined
+} = {}) {
+  return {
+    is_error: true,
+    error: technicalMessage,
+    error_category: errorCategory,
+    is_retriable: Boolean(isRetriable),
+    technical_message: String(technicalMessage),
+    customer_message: String(customerMessage),
+    suggestion: String(suggestion),
+    ...(coverageGap ? { coverage_gap: coverageGap } : {})
+  };
+}
+
+function commonError(kind, detail = "") {
+  const messages = {
+    invalid_login: ["permission", "Invalid login credentials.", "The email or passcode was not accepted.", "Check the passcode and sign in again."],
+    case_id_required: ["validation", "case_id is required.", "A case identifier is required.", "Run decision preparation again or select a case."],
+    approval_not_found: ["not_found", "No pending approval gate found.", "There is no pending approval to decide.", "Refresh the case and confirm an approval gate is open."],
+    case_not_found: ["not_found", "Case not found.", "The requested decision case was not found for your organization.", "Confirm the case id and organization."],
+    not_found: ["not_found", "Not found", "The requested AI-SRF endpoint does not exist.", "Check the endpoint path."]
+  };
+  const [errorCategory, technicalMessage, customerMessage, suggestion] = messages[kind] || ["validation", detail || "Request failed.", "The request could not be completed.", "Review the request and try again."];
+  return errorEnvelope({ errorCategory, technicalMessage, customerMessage, suggestion });
+}
+
+function successEnvelope(body = {}) {
+  if (body && typeof body === "object" && !Array.isArray(body) && "is_error" in body) return body;
+  return { is_error: false, ...body };
+}
+
 function jsonResponse(request, body, status = 200, extraHeaders = {}) {
-  return new Response(JSON.stringify(body), {
+  const payload = status >= 400
+    ? (body?.is_error ? body : errorEnvelope({
+      errorCategory: body?.error_category || "validation",
+      technicalMessage: body?.error || body?.message || "Request failed.",
+      customerMessage: body?.customer_message || "The request could not be completed.",
+      suggestion: body?.suggestion || "Review the request and try again."
+    }))
+    : successEnvelope(body);
+  let text = JSON.stringify(payload);
+  let headers = { ...corsHeadersFor(request), "Content-Type": "application/json; charset=utf-8", ...extraHeaders };
+  if (new TextEncoder().encode(text).length > REQUEST_LIMITS.maxResponseBytes) {
+    text = JSON.stringify(successEnvelope({
+      truncated: true,
+      summary: "Response exceeded Cloudflare Worker response budget and was summarized.",
+      items: [],
+      next_cursor: null
+    }));
+    headers = { ...headers, "X-AI-SRF-Truncated": "true" };
+  }
+  return new Response(text, {
     status,
-    headers: { ...corsHeadersFor(request), "Content-Type": "application/json; charset=utf-8", ...extraHeaders }
+    headers
   });
 }
 
@@ -180,8 +237,18 @@ async function currentUser(request, env) {
 }
 
 function requireRole(user, roles) {
-  if (!user) return { allowed: false, status: 401, error: "Unauthorized" };
-  if (!roles.includes(user.role)) return { allowed: false, status: 403, error: "Forbidden" };
+  if (!user) return { allowed: false, status: 401, error: errorEnvelope({
+    errorCategory: "permission",
+    technicalMessage: "Unauthorized",
+    customerMessage: "Please sign in before using AI-SRF.",
+    suggestion: "Log in with an analyst, executive, or admin account."
+  }) };
+  if (!roles.includes(user.role)) return { allowed: false, status: 403, error: errorEnvelope({
+    errorCategory: "permission",
+    technicalMessage: `Role ${user.role} cannot perform this action.`,
+    customerMessage: "Your role is not authorized for this action.",
+    suggestion: "Ask an executive or admin to perform this step."
+  }) };
   return { allowed: true };
 }
 
@@ -206,7 +273,7 @@ async function readJson(request) {
   if (contentLength > REQUEST_LIMITS.maxRequestBytes) {
     const error = new Error(`Request body exceeds ${REQUEST_LIMITS.maxRequestBytes} bytes.`);
     error.status = 413;
-    error.error_category = "request_too_large";
+    error.error_category = "resource_limit";
     error.is_retriable = false;
     error.suggestion = "Reduce the prompt or attach only summarized context.";
     throw error;
@@ -266,6 +333,29 @@ function clampNumber(value, min = 0, max = 100) {
   const number = Number(value);
   if (!Number.isFinite(number)) return min;
   return Math.min(max, Math.max(min, number));
+}
+
+function buildRequestCaseFacts({ caseId, user, body, userGoal }) {
+  return {
+    case_id: caseId,
+    organization_id: user.organization_id,
+    decision_type: deriveCaseType(userGoal),
+    risk_appetite: body.risk_appetite || "moderate",
+    user_role: user.role,
+    decision_owner: body.decision_owner || user.email || user.user_id
+  };
+}
+
+function claimSource({ claim, sourceType, sourceId, confidence = 0.8, freshness = "current", extractionMethod = "deterministic_fast_path" }) {
+  return {
+    claim,
+    source_type: sourceType,
+    source_id: sourceId,
+    extraction_method: extractionMethod,
+    timestamp: new Date().toISOString(),
+    confidence,
+    freshness
+  };
 }
 
 function executiveStrategies(goal = "") {
@@ -356,6 +446,8 @@ function compactCaseForExecutive(caseState = {}) {
     current_stage: caseState.current_stage,
     status: caseState.status,
     user_goal: caseState.user_goal,
+    created_by: caseState.created_by,
+    last_modified_by: caseState.last_modified_by,
     organization_id: caseState.organization_id,
     organization_name: caseState.organization_name,
     narrative: caseState.narrative,
@@ -376,7 +468,10 @@ function compactCaseForExecutive(caseState = {}) {
     audit_log_refs: (caseState.audit_log_refs || []).slice(-10),
     audit_refs: (caseState.audit_refs || []).slice(-10),
     fast_path: caseState.fast_path || null,
-    full_path_status: caseState.full_path_status || null
+    full_path_status: caseState.full_path_status || null,
+    case_facts: caseState.case_facts || null,
+    provenance: (caseState.provenance || []).slice(0, 10),
+    state_size_telemetry: caseState.state_size_telemetry || null
   };
 }
 
@@ -409,6 +504,7 @@ async function runExecutiveFastPath({ env, ctx, user, body }) {
   caseState.last_modified_by = user.user_id;
   caseState.organization_id = user.organization_id;
   caseState.organization_name = user.organization_name;
+  caseState.case_facts = buildRequestCaseFacts({ caseId, user, body, userGoal });
   caseState.simulation_mode_enabled = Boolean(body.simulation_mode_enabled);
 
   const caseType = deriveCaseType(userGoal);
@@ -438,6 +534,26 @@ async function runExecutiveFastPath({ env, ctx, user, body }) {
   const best = ranked[0];
   const confidence = Number(Math.min(0.94, Math.max(0.62, (best.score / 100) + (runCount > 1 ? 0.01 : 0))).toFixed(2));
   const phasedInsight = globalInsights.find((insight) => insight.strategy_pattern === "phased_governed_rollout" && insight.insight_type === "success_pattern");
+  const provenance = [
+    claimSource({
+      claim: "Phased governed rollout is the best validated strategy.",
+      sourceType: "outcome_engine",
+      sourceId: caseId,
+      confidence
+    }),
+    claimSource({
+      claim: phasedInsight?.lesson || "Similar high-risk environments favored phased rollout over full migration.",
+      sourceType: "global_intelligence",
+      sourceId: phasedInsight?.id || "seed-cloud-migration-phased-success",
+      confidence: Number(phasedInsight?.confidence || 0.86)
+    }),
+    claimSource({
+      claim: caseState.case_facts.decision_type,
+      sourceType: "case_facts",
+      sourceId: caseId,
+      confidence: 1
+    })
+  ];
   const approvalGate = (caseState.approval_gates || []).find((gate) => gate.type === "final_decision" && gate.status === "pending") || {
     approval_id: crypto.randomUUID(),
     type: "final_decision",
@@ -464,7 +580,18 @@ async function runExecutiveFastPath({ env, ctx, user, body }) {
       : "Learning applied: No prior organization-specific outcome pattern existed before this run; this decision has now been stored for reuse.",
     global_intelligence_insight: phasedInsight?.lesson || "Cross-organization insight: Similar high-risk environments favored phased rollout over full migration.",
     global_intelligence_used: globalInsights.slice(0, 3),
-    learning_adjustment: learningCounts.successful || learningCounts.failed ? 2 : 0
+    learning_adjustment: learningCounts.successful || learningCounts.failed ? 2 : 0,
+    provenance_summary: provenance.slice(0, 3),
+    established_facts: [
+      "POPIA, resilience, and vendor-lock-in constraints materially shape the decision.",
+      "At least three strategy paths were generated, simulated, scored, and ranked."
+    ],
+    contested_findings: [
+      "Decision-speed gains depend on pilot evidence and vendor resilience proof."
+    ],
+    coverage_gaps: [
+      "Final vendor exit terms and production continuity evidence must be confirmed before scale-up."
+    ]
   };
   caseState.system_learning_insight = caseState.outcome.system_learning_insight;
   caseState.global_intelligence_insight = caseState.outcome.global_intelligence_insight;
@@ -530,7 +657,14 @@ async function runExecutiveFastPath({ env, ctx, user, body }) {
     returned_in_ms: Date.now() - started,
     mode: "executive_fast_path",
     full_path: "scheduled_with_ctx_waitUntil",
-    run_count: runCount
+    run_count: runCount,
+    state_size_bytes: new TextEncoder().encode(JSON.stringify(compactCaseForExecutive(caseState))).length
+  };
+  caseState.provenance = provenance;
+  caseState.state_size_telemetry = {
+    compact_state_bytes: caseState.fast_path.state_size_bytes,
+    budget_bytes: REQUEST_LIMITS.maxStateBytes,
+    recorded_at: new Date().toISOString()
   };
   caseState.full_path_status = "processing";
   caseState.loop = {
@@ -731,7 +865,7 @@ export default {
         const organizationName = String(body.organization_name || "Default Organization").trim();
         const expectedPasscode = env.AUTH_PASSCODE || "ai-srf-dev";
         if (!email || !email.includes("@") || body.passcode !== expectedPasscode) {
-          return jsonResponse(request, { error: "Invalid login credentials." }, 401);
+          return jsonResponse(request, commonError("invalid_login"), 401);
         }
         const user = {
           user_id: `jwt:${organizationId}:${email}`,
@@ -757,7 +891,7 @@ export default {
       const user = await currentUser(request, env);
       if (url.pathname.startsWith("/api/")) {
         const authz = requireRole(user, ["analyst", "executive", "admin"]);
-        if (!authz.allowed) return jsonResponse(request, { error: authz.error }, authz.status);
+        if (!authz.allowed) return jsonResponse(request, authz.error, authz.status);
       }
 
       if (url.pathname === "/api/auth/me" && request.method === "GET") {
@@ -786,7 +920,7 @@ export default {
 
       if (url.pathname === "/api/digital-twin/update" && request.method === "POST") {
         const authz = requireRole(user, ["analyst", "admin"]);
-        if (!authz.allowed) return jsonResponse(request, { error: authz.error }, authz.status);
+        if (!authz.allowed) return jsonResponse(request, authz.error, authz.status);
         const result = await updateDigitalTwin(env, { organizationId: user.organization_id });
         return jsonResponse(request, {
           organization_id: user.organization_id,
@@ -796,7 +930,7 @@ export default {
 
       if (url.pathname === "/api/policy/check" && request.method === "POST") {
         const authz = requireRole(user, ["admin"]);
-        if (!authz.allowed) return jsonResponse(request, { error: authz.error }, authz.status);
+        if (!authz.allowed) return jsonResponse(request, authz.error, authz.status);
         const body = await readJson(request);
         const policy = new PolicyEngine(agentRegistry);
         return jsonResponse(request, policy.buildToolPolicyCheck(body.agent_id, body.tool_name));
@@ -827,7 +961,7 @@ export default {
 
       if (url.pathname === "/api/loop" && request.method === "POST") {
         const authz = requireRole(user, ["analyst", "admin"]);
-        if (!authz.allowed) return jsonResponse(request, { error: authz.error }, authz.status);
+        if (!authz.allowed) return jsonResponse(request, authz.error, authz.status);
         const body = await readJson(request);
         const caseId = body.case_id || crypto.randomUUID();
         traceStep("worker_route_to_decision_loop", { case_id: caseId, path: url.pathname, body }, { max_iterations: body.max_iterations || 12 });
@@ -846,7 +980,7 @@ export default {
 
       if (url.pathname === "/api/decision/run" && request.method === "POST") {
         const authz = requireRole(user, ["analyst", "admin"]);
-        if (!authz.allowed) return jsonResponse(request, { error: authz.error }, authz.status);
+        if (!authz.allowed) return jsonResponse(request, authz.error, authz.status);
         const body = await readJson(request);
         console.log("Decision loop triggered", body.case_id || "(new case)");
         traceStep("worker_route_to_fast_path", { case_id: body.case_id || null, path: url.pathname, body }, { command: "run_executive_fast_path" });
@@ -857,14 +991,14 @@ export default {
 
       if ((url.pathname === "/api/decision/approve" || url.pathname === "/api/decision/reject") && request.method === "POST") {
         const authz = requireRole(user, ["executive", "admin"]);
-        if (!authz.allowed) return jsonResponse(request, { error: authz.error }, authz.status);
+        if (!authz.allowed) return jsonResponse(request, authz.error, authz.status);
         const body = await readJson(request);
         const approved = url.pathname.endsWith("/approve");
         const caseId = body.case_id;
-        if (!caseId) return jsonResponse(request, { error: "case_id is required." }, 400);
+        if (!caseId) return jsonResponse(request, commonError("case_id_required"), 400);
         const caseState = await new D1CaseStore(env.DB).getCase(caseId, { organizationId: user.organization_id });
         const approvalId = body.approval_id || [...(caseState?.approval_gates || [])].reverse().find((gate) => gate.status === "pending")?.approval_id;
-        if (!approvalId) return jsonResponse(request, { error: "No pending approval gate found." }, 404);
+        if (!approvalId) return jsonResponse(request, commonError("approval_not_found"), 404);
         const result = await gateway(env).decideApproval({
           caseId,
           approvalId,
@@ -888,7 +1022,7 @@ export default {
 
       if (url.pathname === "/api/decision/stress-test" && request.method === "POST") {
         const authz = requireRole(user, ["analyst", "admin"]);
-        if (!authz.allowed) return jsonResponse(request, { error: authz.error }, authz.status);
+        if (!authz.allowed) return jsonResponse(request, authz.error, authz.status);
         const body = await readJson(request);
         const { caseId, result } = await runDecisionCommand({
           env,
@@ -904,7 +1038,7 @@ export default {
 
       if (url.pathname === "/api/decision/challenge-assumptions" && request.method === "POST") {
         const authz = requireRole(user, ["analyst", "admin"]);
-        if (!authz.allowed) return jsonResponse(request, { error: authz.error }, authz.status);
+        if (!authz.allowed) return jsonResponse(request, authz.error, authz.status);
         const body = await readJson(request);
         const { caseId, result } = await runDecisionCommand({
           env,
@@ -920,7 +1054,7 @@ export default {
 
       if (url.pathname === "/api/decision/simulate" && request.method === "POST") {
         const authz = requireRole(user, ["analyst", "admin"]);
-        if (!authz.allowed) return jsonResponse(request, { error: authz.error }, authz.status);
+        if (!authz.allowed) return jsonResponse(request, authz.error, authz.status);
         const body = await readJson(request);
         const { caseId, result } = await runDecisionCommand({
           env,
@@ -936,7 +1070,7 @@ export default {
 
       if (url.pathname === "/api/decision/reopen" && request.method === "POST") {
         const authz = requireRole(user, ["analyst", "admin"]);
-        if (!authz.allowed) return jsonResponse(request, { error: authz.error }, authz.status);
+        if (!authz.allowed) return jsonResponse(request, authz.error, authz.status);
         const body = await readJson(request);
         const caseId = body.case_id || crypto.randomUUID();
         const store = new D1CaseStore(env.DB);
@@ -971,19 +1105,26 @@ export default {
       if (caseReplayMatch && request.method === "GET") {
         const caseId = decodeURIComponent(caseReplayMatch[1]);
         const caseState = await new D1CaseStore(env.DB).getCase(caseId, { organizationId: user.organization_id });
-        if (!caseState) return jsonResponse(request, { error: "Case not found." }, 404);
+        if (!caseState) return jsonResponse(request, commonError("case_not_found"), 404);
         const replay = await new D1AuditLog(env.DB).replaySummary(caseId, {
           limit: url.searchParams.get("limit") || 50,
           cursor: url.searchParams.get("cursor") || null
         });
-        return jsonResponse(request, { case: compactCaseForExecutive(caseState), replay });
+        return jsonResponse(request, {
+          case: compactCaseForExecutive(caseState),
+          items: replay.items,
+          next_cursor: replay.next_cursor,
+          truncated: replay.truncated,
+          summary: replay.summary,
+          replay
+        });
       }
 
       const caseEventsMatch = url.pathname.match(/^\/api\/cases\/([^/]+)\/events$/);
       if (caseEventsMatch && request.method === "GET") {
         const caseId = decodeURIComponent(caseEventsMatch[1]);
         const caseState = await new D1CaseStore(env.DB).getCase(caseId, { organizationId: user.organization_id });
-        if (!caseState) return jsonResponse(request, { error: "Case not found." }, 404);
+        if (!caseState) return jsonResponse(request, commonError("case_not_found"), 404);
         const page = await new D1AuditLog(env.DB).replayCasePage(caseId, {
           limit: url.searchParams.get("limit") || 50,
           cursor: url.searchParams.get("cursor") || null
@@ -991,18 +1132,26 @@ export default {
         if (request.headers.get("accept")?.includes("text/event-stream")) {
           return eventStreamResponse(request, page.events);
         }
-        return jsonResponse(request, { case_id: caseId, events: page.events, next_cursor: page.next_cursor, limit: page.limit });
+        return jsonResponse(request, {
+          case_id: caseId,
+          items: page.items,
+          events: page.events,
+          next_cursor: page.next_cursor,
+          truncated: page.truncated,
+          summary: page.summary,
+          limit: page.limit
+        });
       }
 
       const outcomeFeedbackMatch = url.pathname.match(/^\/api\/cases\/([^/]+)\/outcome$/);
       if (outcomeFeedbackMatch && request.method === "POST") {
         const authz = requireRole(user, ["analyst", "executive", "admin"]);
-        if (!authz.allowed) return jsonResponse(request, { error: authz.error }, authz.status);
+        if (!authz.allowed) return jsonResponse(request, authz.error, authz.status);
         const caseId = decodeURIComponent(outcomeFeedbackMatch[1]);
         const body = await readJson(request);
         const store = new D1CaseStore(env.DB);
         const caseState = await store.getCase(caseId, { organizationId: user.organization_id });
-        if (!caseState) return jsonResponse(request, { error: "Case not found." }, 404);
+        if (!caseState) return jsonResponse(request, commonError("case_not_found"), 404);
         const learning = await recordOutcomeFeedback({
           caseState,
           actualOutcome: body,
@@ -1033,7 +1182,7 @@ export default {
       const approvalMatch = url.pathname.match(/^\/api\/cases\/([^/]+)\/approvals\/([^/]+)$/);
       if (approvalMatch && request.method === "POST") {
         const authz = requireRole(user, ["executive", "admin"]);
-        if (!authz.allowed) return jsonResponse(request, { error: authz.error }, authz.status);
+        if (!authz.allowed) return jsonResponse(request, authz.error, authz.status);
         const body = await readJson(request);
         const result = await gateway(env).decideApproval({
           caseId: decodeURIComponent(approvalMatch[1]),
@@ -1068,7 +1217,7 @@ export default {
         return jsonResponse(request, result, result.status || 200);
       }
 
-      return jsonResponse(request, { error: "Not found" }, 404);
+      return jsonResponse(request, commonError("not_found"), 404);
     } catch (error) {
       traceStep("worker.error", { path: url.pathname, method: request.method }, { error: error.message });
       ctx.waitUntil(Promise.resolve(console.error(JSON.stringify({
@@ -1078,12 +1227,13 @@ export default {
         path: url.pathname,
         suggestion: error.suggestion || "Review the Worker trace and replay the case audit events."
       }))));
-      return jsonResponse(request, {
-        error_category: error.error_category || (isResourceLimitError(error) ? "resource_limit" : "worker_error"),
-        is_retriable: error.is_retriable === true,
-        message: error.message,
+      return jsonResponse(request, errorEnvelope({
+        errorCategory: error.error_category || (isResourceLimitError(error) ? "resource_limit" : "transient"),
+        isRetriable: error.is_retriable === true,
+        technicalMessage: error.message,
+        customerMessage: "AI-SRF could not complete this request reliably.",
         suggestion: error.suggestion || "Review the Worker trace and replay the case audit events."
-      }, error.status || (isResourceLimitError(error) ? 429 : 500));
+      }), error.status || (isResourceLimitError(error) ? 429 : 500));
     }
   },
 

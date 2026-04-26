@@ -1296,11 +1296,23 @@ export const toolSchemas = Object.fromEntries(
       name,
       description: toolPurpose(name),
       purpose: toolPurpose(name),
+      when_to_use: toolWhenToUse(name),
+      when_not_to_use: toolWhenNotToUse(name),
+      boundary_conditions: toolBoundaryConditions(name),
+      allowed_caller_agents: allowedCallerAgents(name),
       input_schema: {
         type: "object",
-        additionalProperties: true,
+        additionalProperties: false,
         properties: {
           text: { type: "string" },
+          goal: { type: "string" },
+          timeout_ms: { type: "number" },
+          case_id: { type: "string" },
+          env: { type: "object" },
+          llm: { type: "object" },
+          ai: { type: "object" },
+          cache: { type: "object" },
+          resource_guard: { type: "object" },
           context: {
             type: "object",
             properties: {
@@ -1309,7 +1321,10 @@ export const toolSchemas = Object.fromEntries(
                 properties: {
                   case_id: { type: "string" },
                   organization_id: { type: ["string", "null"] },
-                  decision_type: { type: "string" }
+                  decision_type: { type: "string" },
+                  risk_appetite: { type: "string" },
+                  user_role: { type: "string" },
+                  decision_owner: { type: "string" }
                 }
               }
             }
@@ -1317,7 +1332,8 @@ export const toolSchemas = Object.fromEntries(
         }
       },
       output_schema: TOOL_OUTPUT_SCHEMAS[name] || { required: {} },
-      error_schema: TOOL_ERROR_SCHEMA
+      error_schema: TOOL_ERROR_SCHEMA,
+      structured_errors: true
     }
   ])
 );
@@ -1347,6 +1363,54 @@ function toolPurpose(name) {
     case "evaluate_outcome": return "Score simulated outcome risk, resilience, and recommendation.";
     default: return `Execute governed structured reasoning for ${name}.`;
   }
+}
+
+function toolWhenToUse(name) {
+  if (name.startsWith("run_")) return "Use during deterministic framework, simulation, or strategy validation steps when the coordinator requests this specific analysis.";
+  if (name.startsWith("validate_")) return "Use as a gated review step after the relevant structured state exists.";
+  if (name.includes("memory") || name.includes("learning") || name.includes("reflect")) return "Use after a governed decision state exists and bulky artifacts have been summarized.";
+  return `Use only when the coordinator explicitly routes a case to ${name}.`;
+}
+
+function toolWhenNotToUse(name) {
+  if (name.startsWith("validate_")) return "Do not use before evidence, objections, and case facts are present.";
+  if (name.includes("memory") || name.includes("learning") || name.includes("reflect")) return "Do not use as source of truth for current case facts or approvals.";
+  return "Do not use for authorization, approval, case closure, or cross-organization data access; those are deterministic policy hooks.";
+}
+
+function toolBoundaryConditions(name) {
+  return [
+    "Input must be a bounded JSON object with explicit case_facts.",
+    "Output must validate against the declared output_schema.",
+    "Missing source information may be null or surfaced as a coverage_gap; do not fabricate evidence.",
+    `${name} cannot mutate approval status or close a case.`
+  ];
+}
+
+function allowedCallerAgents(name) {
+  const callers = {
+    gather_evidence: ["tracker"],
+    run_porters_five_forces: ["tracker"],
+    run_pestle_analysis: ["tracker"],
+    extract_assumptions: ["induna"],
+    root_cause_analysis: ["auditor"],
+    run_value_chain_analysis: ["auditor", "architect"],
+    generate_options: ["innovator"],
+    run_scenario_planning: ["innovator", "guardian"],
+    generate_objections: ["challenger"],
+    run_swot_analysis: ["challenger"],
+    build_implementation_plan: ["architect"],
+    generate_monitoring_rules: ["guardian"],
+    validate_policy: ["policy_sentinel"],
+    validate_consensus: ["consensus_tracker"],
+    extract_memory: ["decision_governor"],
+    reflect_on_decision: ["decision_governor"],
+    extract_learning: ["decision_governor"],
+    manage_memory: ["decision_governor"],
+    generate_scenarios: ["decision_governor"],
+    evaluate_outcome: ["decision_governor"]
+  };
+  return callers[name] || ["decision_governor"];
 }
 
 function cacheEntryKey(toolName, input = {}) {

@@ -59,9 +59,10 @@ ${String(current)}
 
 export const TOOL_ERROR_SCHEMA = {
   required: {
+    is_error: "boolean",
     error_category: "string",
     is_retriable: "boolean",
-    message: "string",
+    technical_message: "string",
     customer_message: "string",
     suggestion: "string"
   }
@@ -74,10 +75,14 @@ export function structuredToolError({
   customerMessage = "The system could not complete one governed tool step.",
   suggestion = "Retry the tool or escalate if the error persists."
 } = {}) {
+  const allowed = new Set(["transient", "validation", "business_policy", "permission", "resource_limit", "not_found"]);
+  const category = allowed.has(errorCategory) ? errorCategory : "transient";
   return {
+    is_error: true,
     error: true,
-    error_category: String(errorCategory),
+    error_category: category,
     is_retriable: Boolean(isRetriable),
+    technical_message: String(message),
     message: String(message),
     customer_message: String(customerMessage),
     suggestion: String(suggestion)
@@ -89,9 +94,10 @@ export function isStructuredToolError(value = {}) {
     value &&
       typeof value === "object" &&
       !Array.isArray(value) &&
+      value.is_error === true &&
       typeof value.error_category === "string" &&
       typeof value.is_retriable === "boolean" &&
-      typeof value.message === "string" &&
+      typeof value.technical_message === "string" &&
       typeof value.customer_message === "string" &&
       typeof value.suggestion === "string"
   );

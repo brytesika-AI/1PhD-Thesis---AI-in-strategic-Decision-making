@@ -14,6 +14,7 @@ let activeUser = null;
 let activeCase = null;
 let lastState = null;
 let technicalLoaded = false;
+let pollTimer = null;
 
 const el = (id) => document.getElementById(id);
 
@@ -56,6 +57,11 @@ function riskLevelFrom(state = {}) {
     ? "HIGH"
     : state.digital_twin?.risk_state?.level || state.loop?.risk_state || state.risk_state || "ELEVATED";
   return String(level).toUpperCase();
+}
+
+function titleCaseMetric(value = "") {
+  const text = String(value || "").toLowerCase().replace(/_/g, " ");
+  return text ? text.replace(/\b\w/g, (letter) => letter.toUpperCase()) : "Pending";
 }
 
 function mediumOrHigherRisk(state = {}) {
@@ -109,6 +115,13 @@ function whyWinsFrom(state = {}) {
   return state.decision?.why_this_wins
     || state.outcome?.validation_summary
     || "This strategy wins because it balances value, risk, resilience, compliance evidence, and executive accountability better than the alternatives.";
+}
+
+function shortConfidenceNote(state = {}) {
+  const status = state.full_path_status;
+  if (status === "completed") return "Full validation complete.";
+  if (status === "processing") return "Fast path returned; full validation running.";
+  return "Calibrated by simulation, evidence, and governance checks.";
 }
 
 function buildExecutiveVerdict(state = {}) {
@@ -216,17 +229,17 @@ function renderExecutiveVerdict(state = {}) {
       <div class="verdict-action">${safeHtml(verdict.decision)}</div>
       <div class="card-note">${safeHtml(verdict.strategy)}</div>
     </div>
-    <div class="verdict-card">
+    <div class="verdict-card kpi">
       <h2>Confidence</h2>
       <div class="metric-value">${confidenceLabel(verdict.confidence)}</div>
-      <div class="card-note">${safeHtml(outcome?.validation_summary || "Confidence will calibrate after simulation and validation complete.")}</div>
+      <div class="card-note">${safeHtml(shortConfidenceNote(state))}</div>
     </div>
-    <div class="verdict-card">
+    <div class="verdict-card kpi">
       <h2>Risk Level</h2>
-      <div class="metric-value">${safeHtml(verdict.risk_level)}</div>
-      <div class="card-note">${safeHtml(verdict.risk_level === "HIGH" || verdict.risk_level === "CRITICAL" ? "High, controlled through approval gates." : "Controlled under governance monitoring.")}</div>
+      <div class="metric-value">${safeHtml(titleCaseMetric(verdict.risk_level))}</div>
+      <div class="card-note">${safeHtml(verdict.risk_level === "HIGH" || verdict.risk_level === "CRITICAL" ? "Approval-gated." : "Monitored.")}</div>
     </div>
-    <div class="verdict-card">
+    <div class="verdict-card kpi">
       <h2>Approval</h2>
       <div class="metric-value">${safeHtml(verdict.approval_required ? "YES" : "NO")}</div>
       <span class="status-pill ${safeHtml(verdict.approval_status.toLowerCase())}">${safeHtml(verdict.approval_status)}</span>
@@ -238,6 +251,7 @@ function renderExecutiveVerdict(state = {}) {
     <div class="verdict-card">
       <h2>Next Action</h2>
       <div class="card-note">${safeHtml(verdict.next_action)}</div>
+      <div class="card-note">${safeHtml(state.full_path_status ? `Full validation: ${state.full_path_status}` : "Full validation has not started.")}</div>
     </div>
   `;
 }
@@ -344,6 +358,7 @@ function renderLearningTrust(state = {}) {
         <strong>Trust Calibration</strong>
         <p>${safeHtml(`Confidence: ${confidenceLabel(verdict.confidence)}. Why not higher: live operational risk, vendor resilience evidence, and POPIA evidence trail may still need confirmation.`)}</p>
         <p style="margin-top: 10px;">${safeHtml("What would change the recommendation: stronger continuity evidence, lower regulatory exposure, or failed approval-gate evidence.")}</p>
+        <p style="margin-top: 10px;">${safeHtml(state.outcome?.coverage_gaps?.[0] || "Evidence quality: board-ready, with technical provenance retained in the drawer.")}</p>
       </article>
       <article class="plain-card">
         <strong>Human Role / AI Role</strong>
@@ -398,10 +413,16 @@ function renderGovernanceControls(state = {}) {
 function renderTechnicalDrawer(state = {}) {
   if (!technicalLoaded) return;
   const outcome = outcomeFrom(state);
+  const provenance = asArray(state.provenance || outcome?.provenance_summary);
   el("technicalDetails").innerHTML = `
     <article>
       <h2>Outcome Engine Status</h2>
       <p>${safeHtml(outcome ? "The decision has been generated, simulated, validated, scored, and ranked." : "Outcome validation has not completed yet.")}</p>
+      <p>${safeHtml(state.state_size_telemetry ? `State size: ${state.state_size_telemetry.compact_state_bytes} bytes.` : "State size telemetry is pending.")}</p>
+    </article>
+    <article>
+      <h2>Provenance</h2>
+      <pre>${safeHtml(JSON.stringify(provenance, null, 2))}</pre>
     </article>
     <article>
       <h2>Raw Case State</h2>
@@ -434,7 +455,7 @@ async function fetchJson(path, options = {}) {
   } catch {
     throw new Error(`HTTP ${response.status}: API returned non-JSON.`);
   }
-  if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+  if (!response.ok || payload.is_error) throw new Error(payload.customer_message || payload.technical_message || payload.error || `HTTP ${response.status}`);
   return payload;
 }
 
@@ -474,9 +495,41 @@ async function loadEvents(caseId) {
   const result = await fetchJson(`/api/cases/${encodeURIComponent(caseId)}/events`, { method: "GET" });
   lastState = {
     ...(lastState || {}),
-    audit_events: result.events || []
+    audit_events: result.items || result.events || []
   };
   renderTechnicalDrawer(lastState);
+}
+
+async function refreshCase(caseId) {
+  if (!caseId) return;
+  const result = await fetchJson(`/api/cases/${encodeURIComponent(caseId)}/replay?limit=1`, { method: "GET" });
+  if (result.case) {
+    lastState = { ...(lastState || {}), ...result.case };
+    lastState.executive_verdict = buildExecutiveVerdict(lastState);
+    renderState(lastState);
+  }
+  await loadEvents(caseId);
+}
+
+function startPolling(caseId) {
+  if (pollTimer) clearInterval(pollTimer);
+  let attempts = 0;
+  pollTimer = setInterval(async () => {
+    attempts += 1;
+    try {
+      await refreshCase(caseId);
+      const status = lastState?.full_path_status;
+      if (["completed", "background_failed"].includes(status) || attempts >= 20) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    } catch {
+      if (attempts >= 5) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    }
+  }, 3000);
 }
 
 async function executeCommand(endpoint, buttonId, label, extra = {}) {
@@ -493,6 +546,7 @@ async function executeCommand(endpoint, buttonId, label, extra = {}) {
     lastState.executive_verdict = buildExecutiveVerdict(lastState);
     renderState(lastState);
     await loadEvents(activeCase);
+    if (endpoint === "/api/decision/run") startPolling(activeCase);
   } catch (error) {
     lastState = {
       ...(lastState || {}),
@@ -576,6 +630,8 @@ el("loginForm").addEventListener("submit", async (event) => {
 });
 
 el("logoutButton").addEventListener("click", async () => {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = null;
   await fetchJson("/api/auth/logout", { method: "POST", body: "{}" }).catch(() => null);
   activeUser = null;
   activeCase = null;

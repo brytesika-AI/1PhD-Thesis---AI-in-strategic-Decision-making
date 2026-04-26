@@ -1,4 +1,4 @@
-export const agentRegistry = {
+const rawAgentRegistry = {
   agents: {
     tracker: {
       id: "tracker",
@@ -121,4 +121,18 @@ export const agentRegistry = {
       monitoring_triggers: ["Policy Violation Detected"]
     }
   }
+};
+
+function enrichAgent(agent) {
+  return {
+    ...agent,
+    role_description: agent.role_description || `${agent.display_name} serves as ${agent.role} within the hub-and-spoke AI-SRF decision loop and receives explicit case facts from the Decision Governor.`,
+    available_tools: agent.available_tools || agent.allowed_tools
+  };
+}
+
+export const agentRegistry = {
+  agents: Object.fromEntries(
+    Object.entries(rawAgentRegistry.agents).map(([agentId, agent]) => [agentId, enrichAgent(agent)])
+  )
 };

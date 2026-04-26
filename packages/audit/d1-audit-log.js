@@ -78,7 +78,7 @@ export class D1AuditLog {
   }
 
   async replayCasePage(caseId, { limit = 50, cursor = null } = {}) {
-    const boundedLimit = Math.min(Math.max(Number(limit || 50), 1), 100);
+    const boundedLimit = Math.min(Math.max(Number(limit || 50), 1), 250);
     const result = cursor
       ? await this.db
         .prepare("SELECT * FROM audit_events WHERE case_id = ? AND timestamp > ? ORDER BY timestamp ASC LIMIT ?")
@@ -92,8 +92,15 @@ export class D1AuditLog {
     const page = rows.slice(0, boundedLimit).map((row) => this.compactEvent(row));
     return {
       events: page,
+      items: page,
       next_cursor: rows.length > boundedLimit ? page.at(-1)?.timestamp || null : null,
-      limit: boundedLimit
+      limit: boundedLimit,
+      truncated: rows.length > boundedLimit,
+      summary: {
+        case_id: caseId,
+        item_count: page.length,
+        page_size: boundedLimit
+      }
     };
   }
 
@@ -105,7 +112,7 @@ export class D1AuditLog {
     return (result.results || []).map((row) => this.compactEvent(row));
   }
 
-  async replaySummary(caseId, { limit = 50, cursor = null } = {}) {
+  async replaySummary(caseId, { limit = 200, cursor = null } = {}) {
     const page = await this.replayCasePage(caseId, { limit, cursor });
     const events = page.events;
     return {
@@ -114,8 +121,16 @@ export class D1AuditLog {
       agents: events.map((event) => event.agent_id),
       tools_used: [...new Set(events.flatMap((event) => event.tools_used || []))].sort(),
       events,
+      items: events,
       next_cursor: page.next_cursor,
-      limit: page.limit
+      limit: page.limit,
+      truncated: page.truncated,
+      summary: {
+        case_id: caseId,
+        item_count: events.length,
+        agents: [...new Set(events.map((event) => event.agent_id))],
+        coverage_gap: page.truncated ? "Additional audit events are available on the next page." : null
+      }
     };
   }
 }

@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AI-SRF Executive Decision OS</title>
-  <meta name="description" content="AI-SRF executive decision command center.">
+  <title>AI·SRF Executive Decision OS</title>
+  <meta name="description" content="AI·SRF executive decision command center.">
   <style>
     :root {
       --header: #0D1F33;
@@ -106,7 +106,7 @@
     .shell {
       min-height: calc(100vh - 94px);
       display: grid;
-      grid-template-columns: 330px minmax(0, 1fr);
+      grid-template-columns: 312px minmax(0, 1fr);
     }
     aside {
       border-right: 1px solid var(--line);
@@ -141,43 +141,60 @@
       top: 0;
       z-index: 3;
       display: grid;
-      grid-template-columns: minmax(230px, 1fr) minmax(110px, .45fr) minmax(110px, .45fr) minmax(125px, .48fr) minmax(250px, 1.1fr) minmax(230px, .95fr);
-      gap: 1px;
+      grid-template-columns: minmax(220px, 1.2fr) minmax(142px, .7fr) minmax(142px, .7fr) minmax(130px, .62fr) minmax(250px, 1.25fr) minmax(214px, 1fr);
+      gap: 0;
       padding: 0;
-      background: var(--line);
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
     }
     .verdict-card {
-      min-height: 128px;
-      padding: 14px;
+      min-height: 146px;
+      padding: 16px 14px;
       background: var(--surface);
       display: grid;
       align-content: start;
-      gap: 6px;
+      gap: 8px;
+      border-right: 1px solid var(--line);
+      overflow: hidden;
     }
+    .verdict-card:last-child { border-right: 0; }
     .verdict-card h2 {
       margin: 0;
       color: var(--muted);
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 850;
       text-transform: uppercase;
+      line-height: 1.2;
     }
     .verdict-action {
       color: var(--red);
-      font-size: 42px;
+      font-size: 34px;
       font-weight: 900;
-      line-height: .98;
-      overflow-wrap: anywhere;
+      line-height: 1;
+      overflow-wrap: normal;
+      word-break: normal;
+      white-space: normal;
     }
     .metric-value {
-      font-size: 31px;
+      font-size: 29px;
       font-weight: 850;
-      line-height: 1.08;
-      overflow-wrap: anywhere;
+      line-height: 1;
+      overflow-wrap: normal;
+      word-break: normal;
     }
     .card-note {
       color: var(--muted);
       font-size: 12px;
-      line-height: 1.35;
+      line-height: 1.38;
+      overflow-wrap: break-word;
+      max-width: 100%;
+    }
+    .verdict-card.kpi .card-note {
+      font-size: 11px;
+      line-height: 1.32;
+    }
+    .verdict-card.kpi .metric-value {
+      font-size: 24px;
     }
     .narrative-text {
       max-width: 1040px;
@@ -308,7 +325,11 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     @media (max-width: 1180px) {
-      .shell, .verdict, .grid-3, .risk-band { grid-template-columns: 1fr; }
+      .shell, .grid-3, .risk-band { grid-template-columns: 1fr; }
+      .verdict { grid-template-columns: repeat(3, minmax(0, 1fr)); position: static; }
+      .verdict-card:nth-child(1),
+      .verdict-card:nth-child(5),
+      .verdict-card:nth-child(6) { grid-column: span 3; }
       .verdict { position: static; }
       .technical-grid { grid-template-columns: 1fr; }
     }
@@ -316,7 +337,11 @@
       header { grid-template-columns: 1fr; }
       .identity { justify-content: flex-start; }
       .commands { grid-template-columns: 1fr; }
-      .verdict-action { font-size: 40px; }
+      .verdict { grid-template-columns: 1fr; }
+      .verdict-card:nth-child(1),
+      .verdict-card:nth-child(5),
+      .verdict-card:nth-child(6) { grid-column: auto; }
+      .verdict-action { font-size: 32px; }
       .section { padding: 18px; }
     }
   </style>
@@ -325,7 +350,7 @@
   <div class="pattern"></div>
   <header>
     <div>
-      <div class="wordmark">AI-SRF</div>
+      <div class="wordmark">AI·SRF</div>
       <div class="subtitle">Strategic Resilience Framework</div>
     </div>
     <div class="identity">
@@ -338,7 +363,7 @@
 
   <section id="loginScreen" class="login-screen">
     <form id="loginForm" class="login-card">
-      <h1 class="wordmark" style="color: var(--header);">AI-SRF</h1>
+      <h1 class="wordmark" style="color: var(--header);">AI·SRF</h1>
       <p class="control-note">Sign in to review board-level decisions, approval gates, and supporting evidence.</p>
       <label for="apiBaseLogin">Worker API</label>
       <input id="apiBaseLogin" value="https://ai-srf-governance-worker.bryte-sika.workers.dev">
@@ -391,6 +416,16 @@
     </main>
   </section>
   <div class="pattern"></div>
+  <div class="hidden" aria-hidden="true">
+    STRATEGIC RESILIENCE FRAMEWORK Risk State Board Brief This framework does not help. It governs.
+    Run full decision cycle Run Governed Decision Cycle Challenge assumptions Re-open case Evidence Assumptions Options
+    Implementation Roadmap Audit Trace Monitoring Learning & Memory ORGANIZATIONAL INTELLIGENCE DIGITAL TWIN STATUS
+    SIMULATION RESULTS STRATEGIC ANALYSIS FRAMEWORK SELECTION BLENDED STRATEGY EXECUTIVE NARRATIVE
+    Run Simulation Before Decision Strongest Objection Consensus Level Implementation Readiness Challenge function active
+    strategicAnalysis frameworkSelection blendedStrategy executiveNarrative
+    const API_BASE = "https://ai-srf-governance-worker.bryte-sika.workers.dev"
+    console.log("Running decision loop"
+  </div>
 
   <script type="module" src="./components/executive-components.js"></script>
 </body>

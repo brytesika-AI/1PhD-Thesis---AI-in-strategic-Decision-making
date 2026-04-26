@@ -20,7 +20,9 @@ const REQUIRED_FIELDS = [
   "id",
   "display_name",
   "role",
+  "role_description",
   "system_prompt_path",
+  "available_tools",
   "allowed_tools",
   "output_schema",
   "handoff_rules",
@@ -47,6 +49,14 @@ export function validateAgentRegistry(registryDocument) {
     }
     if (!Array.isArray(agent.allowed_tools) || agent.allowed_tools.length === 0) {
       throw new Error(`Agent ${agentId} must declare at least one governed tool.`);
+    }
+    if (!Array.isArray(agent.available_tools) || agent.available_tools.length === 0) {
+      throw new Error(`Agent ${agentId} must declare available tools.`);
+    }
+    for (const toolName of agent.allowed_tools) {
+      if (!agent.available_tools.includes(toolName)) {
+        throw new Error(`Agent ${agentId} allowed tool ${toolName} is not listed in available_tools.`);
+      }
     }
     if (agent.allowed_tools.length > 5) {
       throw new Error(`Agent ${agentId} has tool explosion: max 5 tools allowed, found ${agent.allowed_tools.length}.`);
