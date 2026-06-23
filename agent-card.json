@@ -1,0 +1,80 @@
+{
+  "bas_version": "2.1",
+  "schema": "a2a/agent-card",
+  "name": "AI Strategic Decision Framework Documentation",
+  "version": "1.0.0",
+  "vendor": "brytesika-AI",
+  "value_statement": "Cuts theoretical research framing from 3 months to 1 day for decision scientists — structuring AI strategic logic.",
+  "description": "Core research codebase and documentation outlining theoretical frameworks for AI-augmented corporate decision systems.",
+  "vertical": "strategic-resilience",
+
+  "capabilities": [
+    { 
+      "id": "research_structuring", 
+      "summary": "Core research codebase and documentation outlining theoretical frameworks for AI-augmented corporate decision systems.", 
+      "inputs": "schema/input.json", 
+      "outputs": "schema/output.json" 
+    }
+  ],
+  "interaction_schemas": {
+    "input": "schema/input.json",
+    "output": "schema/output.json"
+  },
+
+  "model": { "agnostic": true, "default": "gemini-2.5-flash", "swappable_via": "config/env" },
+  "protocols": {
+    "tools": "MCP",
+    "knowledge": "Skills (L1/L2/L3 progressive disclosure)",
+    "collaboration": "A2A",
+    "interface": "A2UI",
+    "commerce": "none"
+  },
+
+  "skills_posture": {
+    "standard": "agentskills.io (open) + BAS v2.1 discipline",
+    "library_size": "2",
+    "tier_breakdown": { "read_only": "1", "draft_only": "1", "action_allowed": "0" },
+    "eval_coverage": {
+      "trigger_accuracy_target": "90%",
+      "failure_modes_covered": ["trigger","execution","regression","token-budget"],
+      "passk_required_for_action_tier": true
+    },
+    "size_hygiene": { "max_skill_body_words": 5000, "co_load_tested_with": "5 active skills" },
+    "meta_skill_governance": "agent-authored skills enter at DRAFT tier; PR-reviewed; added to eval set before promotion",
+    "source_trust": { "first_party": "1", "org_curated": "1", "audited_community": "0" }
+  },
+
+  "security_posture": {
+    "harness": "BAS v2.1 7-pillar",
+    "sandbox": "kernel-isolated, network-isolated, state-resetting for generated code",
+    "egress": "authorised-proxy only; non-interactive external fetch",
+    "identity": "unique per-agent cryptographic workload identity",
+    "access_model": "Zero Ambient Authority + JIT short-lived task-scoped tokens; deny-by-default file-tree allowlist",
+    "tool_authorisation": "centralised gateway + contextual authorisation + runtime guard",
+    "high_stakes_gate": "hardware/crypto MFA + Intent-Diff plain-language review",
+    "data": { "sensitivity": "PII-POPIA", "encryption": "at-rest + in-transit", "tenant_isolation": "true" },
+    "observability": "span-based tracing; AgBOM + Agent Trust Score; version checkpoints + circuit breaker; Denial-of-Wallet guard",
+    "secops": "Red/Blue/Green coverage",
+    "audit": "immutable per-action trail (agent identity + approving human)"
+  },
+
+  "compliance": {
+    "data_protection": "POPIA",
+    "ai_regulation": "n/a",
+    "attestation": "risk-stratified signed outputs"
+  },
+
+  "evaluation": {
+    "harness": "LM-as-judge, rubric-graded, run in CI",
+    "dimensions_scored": ["intent-satisfaction","functional-correctness","visual-behavioural","cost-efficiency","code-quality","trajectory-quality","self-repair"],
+    "safety_rai": "transversal (vulns, secret/IP leak, refusal, content safety)",
+    "headline_scores": { 
+      "intent-satisfaction": "90%", 
+      "functional-correctness": "90%", 
+      "note": "verify scores before publishing" 
+    }
+  },
+
+  "endpoint": { "type": "point-to-point", "url": "https://api.brytesika.ai/v1/research_structuring-agent", "auth": "OAuth" },
+  "pricing": { "model": "flat-fee + usage", "base": "0", "overage": "0.00", "micro_billing": "n/a" }
+}
